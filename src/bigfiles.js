@@ -6,7 +6,7 @@
 import { HttpError, randomToken } from './util.js';
 
 export const BIG = {
-  min: 5 * 1024 * 1024, // kleiner gaat naar R2
+  min: 1024 * 1024, // kleiner (vooral foto's) gaat naar R2, de rest naar de eigen server
   max: 1024 * 1024 * 1024, // 1 GB
   bigAfter: 50 * 1024 * 1024, // vanaf deze grootte korter bewaren
   shortDays: 7,

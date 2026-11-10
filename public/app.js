@@ -2160,7 +2160,7 @@ async function prepareImage(file, max = 1600, quality = 0.85) {
   ctx.drawImage(bmp, 0, 0, w, hgt);
   let q = quality;
   let blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', q));
-  while (blob && blob.size > 1_400_000 && q > 0.4) {
+  while (blob && blob.size > 950_000 && q > 0.4) {
     q -= 0.15;
     blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', q));
   }
@@ -2427,6 +2427,10 @@ function attachmentView(m) {
       a.remove();
     } }, h('span', { class: 'att-ico' }, fileIcon(meta.name)), h('span', { class: 'att-name' }, h('b', null, meta.name || 'Bestand'), h('span', { class: 'muted' }, fileSize(meta.size || 0))));
     wrap.append(link);
+  }
+  if (meta.big && meta.until && meta.until - (m.at || Date.now()) < 10 * 86400e3) {
+    const days = Math.max(0, Math.ceil((meta.until - Date.now()) / 86400e3));
+    wrap.append(h('div', { class: 'att-expire' }, `⏳ Grote bestanden blijven 1 week bewaard: dit bestand wordt ${days === 0 ? 'vandaag' : days === 1 ? 'morgen' : `over ${days} dagen`} automatisch verwijderd (${new Date(meta.until).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })}).`));
   }
   if (meta.cap) wrap.append(h('div', null, richText(meta.cap)));
   if (m.progress) wrap.append(h('div', { class: 'progress muted' }, m.progress));

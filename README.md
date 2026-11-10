@@ -38,7 +38,7 @@ weigert netjes voordat een grens bereikt is (ongeveer de helft van het gratis de
 | Bijlagen laden per maand (zonder cache) | 5 miljoen | 10 miljoen |
 | Bellen via TURN per maand | 400 GB | 1000 GB |
 | Uploads per persoon per dag | 50 MB | – |
-| Grootte per bijlage | 5 MB (groter: eigen bestandsserver) | – |
+| Grootte per bijlage | 1 MB (groter: eigen bestandsserver) | – |
 
 Foto's worden verkleind (max. 1600 px), video's opnieuw gecodeerd (max. 960 px, ~700 kbit/s, 3 minuten),
 spraakberichten op 32 kbit/s. Bijlagen worden uit de edge-cache geladen. Via TURN gaat video op lagere
