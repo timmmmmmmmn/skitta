@@ -748,6 +748,7 @@ async function logout() {
   Sound.play('LOGOUT', { force: !!S.opts.sounds });
   const id = S.me?.id;
   await Push.disable().catch(() => {});
+  try { Native.api?.signedOut?.(); } catch {}
   try { await api('POST', 'logout'); } catch {}
   await E2E.forget(id);
   signedOut();
@@ -1435,6 +1436,11 @@ function homeView() {
             h('button', { class: 'btn', onclick: () => openContact(c.id) }, 'Chatten'),
             h('button', { class: 'btn', onclick: () => Call.start(c.id, false) }, 'Bellen')))
           : h('div', { class: 'muted' }, 'Er zijn nu geen contactpersonen online.'))),
+      Native.api ? null : h('div', { class: 'card' }, h('h2', null, 'Skitta als app'), h('div', { class: 'card-body' },
+        h('ul', { class: 'tips' },
+          h('li', null, h('a', { href: '/download/Skitta.apk' }, 'Android-app downloaden'), ' (APK). Met meldingen, ook als de app dicht is, en updates vanzelf.'),
+          h('li', null, h('a', { href: '/download/Skitta-mac.zip' }, 'Mac-app downloaden'), '. Uitpakken, naar Programma\'s slepen, en de eerste keer met rechts klikken → Open.'),
+          h('li', null, 'iPhone: open deze site in Safari, tik op Deel → ', h('b', null, 'Zet op beginscherm'), ', en zet daarna meldingen aan.')))),
       h('div', { class: 'card' }, h('h2', null, 'Aan de slag'), h('div', { class: 'card-body' },
         h('ul', { class: 'tips' },
           h('li', null, 'Je Skittanaam is ', h('b', null, S.me.username), '. Geef die aan je vrienden zodat ze je kunnen toevoegen.'),
@@ -2178,6 +2184,8 @@ function glassMenu(items, x, y, anchor) {
   }
 }
 window.skittaGlassPick = (id) => glassPicks.get(id)?.();
+window.skittaOpen = (c) => { if (S.convs.has(Number(c))) openConv(Number(c)); return true; };
+window.skittaToast = (text) => toast({ title: 'Skitta', text, plain: true });
 
 // Terugknop van Android: eerst menu of venster dicht, dan terug naar de lijst.
 window.skittaBack = () => {
@@ -2962,7 +2970,11 @@ async function optionsDialog() {
       h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '6px' } }, 'Proberen:',
         [['IM', 'Bericht'], ['CALL_IN', 'Oproep'], ['ONLINE', 'Online'], ['LOGIN', 'Aanmelden'], ['HANGUP', 'Ophangen']].map(([n, l]) => h('span', null, sample(n), ' ', l, ' ')))),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Meldingen'),
-      h('label', null, notif, Native.api ? 'Meldingen regelt de app zelf' : 'Pushmeldingen op dit apparaat (ook als Skitta dicht is)'),
+      Native.api?.setBackground ? (() => {
+        const bg = h('input', { type: 'checkbox', checked: Native.api.background() });
+        bg.onchange = () => Native.api.setBackground(bg.checked);
+        return h('label', null, bg, 'Verbonden blijven op de achtergrond (meldingen als de app dicht is)');
+      })() : h('label', null, notif, Native.api ? 'Meldingen regelt de app zelf' : 'Pushmeldingen op dit apparaat (ook als Skitta dicht is)'),
       isIos() && !isStandalone() ? h('p', { class: 'muted', style: { margin: '0 0 6px' } }, 'Op een iPhone werkt dit alleen als je Skitta op je beginscherm zet (Deel → Zet op beginscherm).') : null,
       cb('onlineToasts', 'Melding als een contactpersoon online komt')),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Thema'),

@@ -1,0 +1,19 @@
+[package]
+name = "skitta"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+notify-rust = "4.19.0"
+png = "0.18.1"
+serde_json = "1.0.154"
+tao = "0.37.2"
+tray-icon = "0.26.1"
+tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
+ureq = "3.5.1"
+wry = "0.57.2"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"
