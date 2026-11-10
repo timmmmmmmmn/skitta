@@ -2017,8 +2017,9 @@ function composeView(conv) {
         const r = e.currentTarget.getBoundingClientRect();
         popMenu([
           { label: 'Foto of video', icon: 'photo', run: () => file.click() },
+          { label: 'Plakken van klembord', icon: 'copy', run: () => pasteFromClipboard(conv.id) },
           { label: 'Bestand', icon: 'clip', run: () => anyFile.click() }
-        ], r.left, r.top - 90, { anchor: e.currentTarget });
+        ], r.left, r.top - 130, { anchor: e.currentTarget });
       } }, svg('plus')),
       h('div', { class: 'm-field' },
         h('button', { class: 'm-only m-emo', title: 'Emoticons', onclick: (e) => emoticonMenu(e.currentTarget, ta) }, smileyIcon()),
@@ -2035,6 +2036,38 @@ function smileyIcon() {
   s.setAttribute('viewBox', '0 0 16 16');
   s.innerHTML = '<defs><radialGradient id="sm" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="#fff6a8"/><stop offset=".6" stop-color="#ffd21f"/><stop offset="1" stop-color="#eaa400"/></radialGradient></defs><circle cx="8" cy="8" r="7" fill="url(#sm)" stroke="#c48a00"/><circle cx="5.7" cy="6.3" r="1" fill="#5a3b00"/><circle cx="10.3" cy="6.3" r="1" fill="#5a3b00"/><path d="M4.7 9.3c.8 1.6 2 2.3 3.3 2.3s2.5-.7 3.3-2.3" fill="none" stroke="#5a3b00" stroke-width="1.1" stroke-linecap="round"/>';
   return s;
+}
+
+// Foto (of ander bestand) van het klembord versturen. In de Android-app leest de app het klembord
+// zelf (de WebView kan geen afbeeldingen plakken); elders de klembord-functie van de browser.
+async function pasteFromClipboard(convId) {
+  try {
+    if (Native.api?.clipboardImage) {
+      const raw = Native.api.clipboardImage();
+      if (!raw) return toastError('Er staat geen foto op het klembord');
+      const { mime, data, name } = JSON.parse(raw);
+      const bytes = unb64(data);
+      return sendFile(convId, new File([bytes], name || `klembord.${(mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`, { type: mime }));
+    }
+    if (!navigator.clipboard?.read) return toastError('Plakken wordt in deze browser niet ondersteund; gebruik lang indrukken → Plakken in het tekstvak');
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t.startsWith('image/') || t.startsWith('video/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      return sendFile(convId, new File([blob], `klembord.${type.split('/')[1].replace('jpeg', 'jpg')}`, { type }));
+    }
+    const text = await navigator.clipboard.readText?.();
+    if (text) {
+      const ta = $('#compose-text');
+      ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+      ta.focus();
+      sendIcon();
+      return;
+    }
+    toastError('Er staat geen foto op het klembord');
+  } catch {
+    toastError('Skitta mag het klembord niet lezen');
+  }
 }
 
 // Telefoon: microfoon als er niets getypt is, anders het verzendpijltje.
@@ -2590,8 +2623,12 @@ function glassMenu(items, x, y, anchor) {
   const add = (it) => {
     if (!it) return;
     if (it === '-') { if (rows.length) rows.push({ separator: true }); return; }
-    if (it.sub) { rows.push({ heading: true, title: it.label }); it.sub.forEach(add); rows.push({ separator: true }); return; }
     const id = `m${n++}`;
+    if (it.sub) {
+      glassPicks.set(id, () => setTimeout(() => glassMenu(it.sub, x, y, anchor), 380));
+      rows.push({ id, title: `${it.label}  ›`, icon: ICONS[it.icon] || '' });
+      return;
+    }
     glassPicks.set(id, it.run);
     const row = { id, title: it.label, disabled: !!it.disabled, icon: ICONS[it.icon] || '' };
     if (it.checked !== undefined) row.checked = !!it.checked;
@@ -2637,12 +2674,16 @@ function popMenu(items, x, y, opts = {}) {
       class: `mi ${it.checked ? 'checked' : ''} ${it.sub ? 'sub' : ''}`, role: 'menuitem', disabled: !!it.disabled,
       onclick: (e) => {
         e.stopPropagation();
+        if (it.sub && mobile()) {
+          const r = menu.getBoundingClientRect();
+          return popMenu([{ label: '‹ Terug', run: () => popMenu(items, x, y, opts) }, '-', ...it.sub], r.left, r.top, opts);
+        }
         if (it.sub) return openSub(it, btn);
         closeMenus();
         it.run?.();
       },
       onmouseenter: () => {
-        if (opts.child) return;
+        if (opts.child || mobile()) return;
         for (const m of document.querySelectorAll('#layer .menu.child')) m.remove();
         if (it.sub) openSub(it, btn);
       }
@@ -2979,21 +3020,43 @@ function addMenu(anchor) {
   ], r.right - 220, r.top - 90, { anchor });
 }
 
+const SOURCE_URL = 'https://github.com/timmmmmmmmn/skitta';
+
 function moreMenu(anchor) {
   const r = anchor.getBoundingClientRect();
   popMenu([
-    { label: 'Skitta Home', icon: 'home', run: () => { showHome(); showPaneOnMobile(true); } },
-    { label: 'Online-status', sub: presenceItems() },
+    { label: 'Online-status', icon: 'user', sub: presenceItems() },
     { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
-    { label: 'Weergave', sub: modeItems() },
-    { label: 'Opties…', run: optionsDialog },
-    { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
-    S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
-    Native.api?.checkForUpdate && { label: `Controleren op updates (versie ${Native.api.appVersion?.() || '?'})`, run: () => Native.api.checkForUpdate() },
-    { label: 'Over Skitta', run: aboutDialog },
-    '-',
-    { label: 'Afmelden', run: logout }
+    { label: 'Weergave', icon: 'screen', sub: modeItems() },
+    { label: 'Thema', icon: 'photo', sub: mobileThemeItems() },
+    { label: 'Extra', icon: 'more', sub: [
+      { label: 'Opties…', run: optionsDialog },
+      { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
+      S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
+      Native.api?.checkForUpdate && { label: `Controleren op updates (${Native.api.appVersion?.() || '?'})`, run: () => Native.api.checkForUpdate() },
+      { label: 'Over Skitta', run: aboutDialog }
+    ] },
+    { label: 'Broncode', icon: 'chat', run: () => window.open(SOURCE_URL, '_blank', 'noopener') }
   ], r.left, r.top - 300, { anchor });
+}
+
+// ---------- Thema's voor de telefoon (gebaseerd op de mobiele apps door de jaren heen) ----------
+const MOBILE_THEMES = [
+  ['', 'Standaard'], ['a2010', 'Android 2010'], ['a2013', 'Android 2013'], ['a2014', 'Android 2014'], ['a2015', 'Android 2015'],
+  ['i2009', 'iPhone 2009'], ['i2010', 'iPhone 2010'], ['i2011', 'iPhone 2011'], ['i2012', 'iPhone 2012'], ['i2013', 'iPhone 2013'],
+  ['m2021', '2021']
+];
+
+function setMobileTheme(t) {
+  S.opts.mtheme = t;
+  saveOpts();
+  if (t) document.documentElement.dataset.mtheme = t;
+  else delete document.documentElement.dataset.mtheme;
+  applyMode();
+}
+
+function mobileThemeItems() {
+  return MOBILE_THEMES.map(([id, label]) => ({ label, checked: (S.opts.mtheme || '') === id, run: () => setMobileTheme(id) }));
 }
 
 function renderNav() {
@@ -3041,7 +3104,8 @@ function applyMode() {
   const pref = S.opts.mode || 'auto';
   let system = darkQuery.matches;
   try { if (Native.api?.systemDark) system = Native.api.systemDark(); } catch {}
-  const dark = pref === 'dark' || (pref === 'auto' && system);
+  const mt = mobile() ? S.opts.mtheme || '' : '';
+  const dark = mt === 'm2021' || (!mt && (pref === 'dark' || (pref === 'auto' && system)));
   document.documentElement.dataset.mode = dark ? 'dark' : 'light';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark && mobile() ? '#121416' : '#00aff0');
   try { Native.api?.setDark?.(dark); } catch {}

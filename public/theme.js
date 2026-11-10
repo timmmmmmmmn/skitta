@@ -7,13 +7,16 @@ try {
     localStorage.setItem('skitta.opts', JSON.stringify(opts));
   }
   if (opts.theme) document.documentElement.dataset.theme = opts.theme;
+  if (opts.mtheme) document.documentElement.dataset.mtheme = opts.mtheme;
 } catch {}
 
 // Licht/donker meteen zetten (telefoon), zodat het scherm niet eerst wit flitst.
 try {
-  const mode = JSON.parse(localStorage.getItem('skitta.opts') || '{}').mode || 'auto';
+  const o = JSON.parse(localStorage.getItem('skitta.opts') || '{}');
+  const mode = o.mode || 'auto';
   let system = matchMedia('(prefers-color-scheme: dark)').matches;
   try { if (window.SkittaNative?.systemDark) system = window.SkittaNative.systemDark(); } catch {}
-  const dark = mode === 'dark' || (mode === 'auto' && system);
+  const mt = innerWidth <= 720 ? o.mtheme || '' : '';
+  const dark = mt === 'm2021' || (!mt && (mode === 'dark' || (mode === 'auto' && system)));
   document.documentElement.dataset.mode = dark ? 'dark' : 'light';
 } catch {}

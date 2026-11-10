@@ -525,6 +525,22 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { VideoActivity.start(this@MainActivity, videoFile(id), mime, title) }
         }
 
+        /** Foto of video van het klembord (de WebView kan geen afbeeldingen plakken). Leeg = niets bruikbaars. */
+        @JavascriptInterface
+        fun clipboardImage(): String {
+            val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return ""
+            val clip = runCatching { cm.primaryClip }.getOrNull() ?: return ""
+            for (i in 0 until clip.itemCount) {
+                val uri = clip.getItemAt(i).uri ?: continue
+                val mime = contentResolver.getType(uri) ?: continue
+                if (!mime.startsWith("image/") && !mime.startsWith("video/")) continue
+                val bytes = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: continue
+                if (bytes.size > 40 * 1024 * 1024) return ""
+                return JSONObject().put("mime", mime).put("data", Base64.encodeToString(bytes, Base64.NO_WRAP)).toString()
+            }
+            return ""
+        }
+
         @JavascriptInterface
         fun retry() {
             runOnUiThread { this@MainActivity.retry() }

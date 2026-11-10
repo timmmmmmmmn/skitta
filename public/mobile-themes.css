@@ -1,0 +1,167 @@
+/* Thema's voor de telefoon, gebaseerd op de mobiele apps door de jaren heen (alleen ≤ 720 px).
+   Standaard (geen data-mtheme) is de huidige stijl. 2021 is donker; de andere zijn licht. */
+
+@media (max-width: 720px) {
+
+/* ---------- Gedeelde bouwstenen ---------- */
+html[data-mtheme] .me-status, html[data-mtheme] .conv-head h1 { text-shadow: none; }
+
+/* Glanzende blauwe balk (Android 2010, iPhone 2009–2012) */
+html[data-mtheme="a2010"] .me, html[data-mtheme="a2010"] .conv-head,
+html[data-mtheme="i2009"] .me, html[data-mtheme="i2009"] .conv-head,
+html[data-mtheme="i2010"] .me, html[data-mtheme="i2010"] .conv-head,
+html[data-mtheme="i2011"] .me, html[data-mtheme="i2011"] .conv-head,
+html[data-mtheme="i2012"] .me, html[data-mtheme="i2012"] .conv-head {
+  color: #fff; border-bottom: 1px solid #1d4a87;
+  background: linear-gradient(#8bb2e0, #4f82c4 50%, #3d70b6 51%, #3263a8) !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-mtheme="a2010"] .me-status, html[data-mtheme="i2009"] .me-status, html[data-mtheme="i2010"] .me-status,
+html[data-mtheme="i2011"] .me-status, html[data-mtheme="i2012"] .me-status,
+html[data-mtheme="a2010"] .conv-head h1, html[data-mtheme="i2009"] .conv-head h1, html[data-mtheme="i2010"] .conv-head h1,
+html[data-mtheme="i2011"] .conv-head h1, html[data-mtheme="i2012"] .conv-head h1 { color: #fff; text-shadow: 0 -1px 0 rgba(0, 0, 0, .35); }
+html[data-mtheme="a2010"] .conv-head .sub2, html[data-mtheme="i2009"] .conv-head .sub2, html[data-mtheme="i2010"] .conv-head .sub2,
+html[data-mtheme="i2011"] .conv-head .sub2, html[data-mtheme="i2012"] .conv-head .sub2 { color: #dce9f8; }
+html[data-mtheme="a2010"] .conv-head .sbtn, html[data-mtheme="i2009"] .conv-head .sbtn, html[data-mtheme="i2010"] .conv-head .sbtn,
+html[data-mtheme="i2011"] .conv-head .sbtn, html[data-mtheme="i2012"] .conv-head .sbtn,
+html[data-mtheme="a2010"] .conv-head .back svg, html[data-mtheme="i2009"] .conv-head .back svg, html[data-mtheme="i2010"] .conv-head .back svg,
+html[data-mtheme="i2011"] .conv-head .back svg, html[data-mtheme="i2012"] .conv-head .back svg,
+html[data-mtheme="a2010"] .more-btn svg, html[data-mtheme="i2009"] .more-btn svg, html[data-mtheme="i2010"] .more-btn svg,
+html[data-mtheme="i2011"] .more-btn svg, html[data-mtheme="i2012"] .more-btn svg { color: #fff; fill: #fff; }
+html[data-mtheme="a2010"] .caret, html[data-mtheme="i2009"] .caret, html[data-mtheme="i2010"] .caret,
+html[data-mtheme="i2011"] .caret, html[data-mtheme="i2012"] .caret { border-top-color: #fff; }
+
+/* Vierkante foto's met lijstje (oude versies) */
+html[data-mtheme="a2010"] .list-av, html[data-mtheme="i2009"] .list-av, html[data-mtheme="i2010"] .list-av,
+html[data-mtheme="i2011"] .list-av, html[data-mtheme="i2012"] .list-av,
+html[data-mtheme="a2010"] .avatar, html[data-mtheme="i2009"] .avatar, html[data-mtheme="i2010"] .avatar,
+html[data-mtheme="i2011"] .avatar, html[data-mtheme="i2012"] .avatar { border-radius: 3px !important; }
+html[data-mtheme="a2010"] .list-av, html[data-mtheme="i2009"] .list-av, html[data-mtheme="i2010"] .list-av,
+html[data-mtheme="i2011"] .list-av, html[data-mtheme="i2012"] .list-av { width: 56px; height: 56px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+/* Grote groene statusvinkjes naast de naam in plaats van op de foto */
+html[data-mtheme="a2010"] .row > .st, html[data-mtheme="i2009"] .row > .st, html[data-mtheme="i2010"] .row > .st,
+html[data-mtheme="i2011"] .row > .st, html[data-mtheme="i2012"] .row > .st { display: inline-block; width: 22px; height: 22px; background-size: 22px; }
+html[data-mtheme="a2010"] .list-av .st, html[data-mtheme="i2009"] .list-av .st, html[data-mtheme="i2010"] .list-av .st,
+html[data-mtheme="i2011"] .list-av .st, html[data-mtheme="i2012"] .list-av .st { display: none; }
+html[data-mtheme="a2010"] .row, html[data-mtheme="i2009"] .row, html[data-mtheme="i2010"] .row,
+html[data-mtheme="i2011"] .row, html[data-mtheme="i2012"] .row { border-bottom: 1px solid #e2e2e2 !important; padding: 6px 12px; }
+html[data-mtheme="a2010"] .row .name, html[data-mtheme="i2009"] .row .name, html[data-mtheme="i2010"] .row .name,
+html[data-mtheme="i2011"] .row .name, html[data-mtheme="i2012"] .row .name { font-size: 18px; font-weight: 700; }
+
+/* Zwarte glanzende tabbalk (iPhone 2009–2012) */
+html[data-mtheme="i2009"] .mnav-pill, html[data-mtheme="i2010"] .mnav-pill,
+html[data-mtheme="i2011"] .mnav-pill, html[data-mtheme="i2012"] .mnav-pill {
+  background: linear-gradient(#4a4a4a, #1c1c1c 50%, #0a0a0a 51%, #000); border-color: #000; border-radius: 10px;
+}
+html[data-mtheme="i2009"] .mnav-pill button, html[data-mtheme="i2010"] .mnav-pill button,
+html[data-mtheme="i2011"] .mnav-pill button, html[data-mtheme="i2012"] .mnav-pill button { color: #9a9a9a; border-radius: 6px; }
+html[data-mtheme="i2009"] .mnav-pill button.on, html[data-mtheme="i2010"] .mnav-pill button.on,
+html[data-mtheme="i2011"] .mnav-pill button.on, html[data-mtheme="i2012"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .14); }
+html[data-mtheme="i2009"] .mnav-pill button.on svg, html[data-mtheme="i2010"] .mnav-pill button.on svg,
+html[data-mtheme="i2011"] .mnav-pill button.on svg, html[data-mtheme="i2012"] .mnav-pill button.on svg { fill: #39a8ff; }
+html[data-mtheme="i2009"] .mnav-add, html[data-mtheme="i2010"] .mnav-add,
+html[data-mtheme="i2011"] .mnav-add, html[data-mtheme="i2012"] .mnav-add { border-radius: 10px; background: linear-gradient(#8bb2e0, #3d70b6 51%, #3263a8); border-color: #1d4a87; }
+html[data-mtheme="i2009"] .search input, html[data-mtheme="i2010"] .search input,
+html[data-mtheme="i2011"] .search input, html[data-mtheme="i2012"] .search input,
+html[data-mtheme="a2010"] .search input { background-color: #fff; border: 1px solid #b7c3cf; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15); }
+html[data-mtheme="i2009"] .search, html[data-mtheme="i2010"] .search,
+html[data-mtheme="i2011"] .search, html[data-mtheme="i2012"] .search { background: linear-gradient(#d4dbe3, #b7c3cf); padding-top: 8px; }
+
+/* ---------- Android 2010 ---------- */
+html[data-mtheme="a2010"] .app, html[data-mtheme="a2010"] .side, html[data-mtheme="a2010"] .list { background: #fff; }
+html[data-mtheme="a2010"] .search { background: #f3f3f3; padding-top: 8px; }
+html[data-mtheme="a2010"] .chat { background: #fff; }
+html[data-mtheme="a2010"] .msg .text { background: #f1f1f1; border-radius: 4px !important; }
+html[data-mtheme="a2010"] .msg.mine .text { background: #d9ecfb; color: #1b1b1b; }
+html[data-mtheme="a2010"] .msg.mine .meta, html[data-mtheme="a2010"] .msg.mine .meta .ticks { color: #607a8c; }
+html[data-mtheme="a2010"] .mnav-pill { border-radius: 6px; background: linear-gradient(#5d9ff0, #2a7de1); border-color: #1d64c8; }
+html[data-mtheme="a2010"] .mnav-pill button { color: #dbe9fb; border-radius: 4px; }
+html[data-mtheme="a2010"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .2); }
+html[data-mtheme="a2010"] .mnav-add { border-radius: 6px; }
+
+/* ---------- Android 2013 / 2014: witte kop, blauwe titels, berichten als rijen ---------- */
+html[data-mtheme="a2013"], html[data-mtheme="a2014"] { --m-blue: #00aff0; }
+html[data-mtheme="a2013"] .me, html[data-mtheme="a2014"] .me { background: linear-gradient(110deg, #fff 55%, #d8f1fc 55%, #bfe8fa) !important; }
+html[data-mtheme="a2013"] .me-status, html[data-mtheme="a2014"] .me-status { color: #00aff0; }
+html[data-mtheme="a2013"] .conv-head h1, html[data-mtheme="a2014"] .conv-head h1 { color: #00aff0; font-size: 18px; }
+html[data-mtheme="a2014"] .conv-head .who { text-align: center; }
+html[data-mtheme="a2013"] .conv-head .sbtn, html[data-mtheme="a2014"] .conv-head .sbtn,
+html[data-mtheme="a2013"] .conv-head .back svg, html[data-mtheme="a2014"] .conv-head .back svg { color: #00aff0; fill: #00aff0; }
+html[data-mtheme="a2013"] .row.unread .name, html[data-mtheme="a2014"] .row.unread .name { color: #f08a00; }
+html[data-mtheme="a2013"] .row .badge, html[data-mtheme="a2014"] .row .badge { background: #f08a00; }
+html[data-mtheme="a2013"] .msg, html[data-mtheme="a2014"] .msg { align-items: stretch !important; padding: 0; }
+html[data-mtheme="a2013"] .msg .text, html[data-mtheme="a2014"] .msg .text {
+  max-width: none; border-radius: 0 !important; background: #fff; color: #1b1b1b; padding: 8px 16px;
+}
+html[data-mtheme="a2013"] .msg:not(.mine) .text, html[data-mtheme="a2014"] .msg:not(.mine) .text { background: #e5f5fd; }
+html[data-mtheme="a2013"] .msg.mine .meta, html[data-mtheme="a2014"] .msg.mine .meta,
+html[data-mtheme="a2013"] .msg.mine .meta .ticks, html[data-mtheme="a2014"] .msg.mine .meta .ticks { color: #8aa0ad; }
+html[data-mtheme="a2013"] .msg.first .from, html[data-mtheme="a2014"] .msg.first .from { display: block !important; text-align: left; padding: 6px 16px 0; color: #00aff0; font-size: 12.5px; font-weight: 600; }
+html[data-mtheme="a2013"] .msg.first.mine .from, html[data-mtheme="a2014"] .msg.first.mine .from { background: #fff; }
+html[data-mtheme="a2013"] .msg.first:not(.mine) .from, html[data-mtheme="a2014"] .msg.first:not(.mine) .from { background: #e5f5fd; }
+html[data-mtheme="a2013"] .mnav-pill, html[data-mtheme="a2014"] .mnav-pill { background: #1ba1e2; border-color: #1590cc; border-radius: 4px; }
+html[data-mtheme="a2013"] .mnav-pill button, html[data-mtheme="a2014"] .mnav-pill button { color: #d4efff; border-radius: 2px; }
+html[data-mtheme="a2013"] .mnav-pill button.on, html[data-mtheme="a2014"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .18); }
+html[data-mtheme="a2013"] .mnav-add, html[data-mtheme="a2014"] .mnav-add { border-radius: 4px; }
+html[data-mtheme="a2013"] .m-send, html[data-mtheme="a2014"] .m-send { background: #00aff0; }
+
+/* ---------- Android 2015: Material ---------- */
+html[data-mtheme="a2015"] { --m-blue: #00aff0; --m-bubble: #c7edfc; --m-other: #eef0f2; }
+html[data-mtheme="a2015"] .me { background: #00aff0 !important; color: #fff; }
+html[data-mtheme="a2015"] .me-status { color: #fff; }
+html[data-mtheme="a2015"] .caret { border-top-color: #fff; }
+html[data-mtheme="a2015"] .search { background: #00aff0; padding-bottom: 12px; }
+html[data-mtheme="a2015"] .search input { background-color: rgba(255, 255, 255, .95); }
+html[data-mtheme="a2015"] .conv-head { background: #fff !important; }
+html[data-mtheme="a2015"] .conv-head h1 { color: #00aff0; font-size: 17px; }
+html[data-mtheme="a2015"] .conv-head .sbtn, html[data-mtheme="a2015"] .conv-head .back svg { color: #00aff0; fill: #00aff0; }
+html[data-mtheme="a2015"] .msg .text { border-radius: 4px !important; }
+html[data-mtheme="a2015"] .msg.mine .text { color: #1b1b1b; }
+html[data-mtheme="a2015"] .msg.mine .meta, html[data-mtheme="a2015"] .msg.mine .meta .ticks { color: #4b7c93; }
+html[data-mtheme="a2015"] .mnav-pill { border-radius: 4px; }
+html[data-mtheme="a2015"] .mnav-add { background: #00aff0; border: 0; box-shadow: 0 4px 10px rgba(0, 0, 0, .3); }
+
+/* ---------- iPhone 2010 / 2011: berichten als lichtblauwe kaartjes ---------- */
+html[data-mtheme="i2010"] .chat, html[data-mtheme="i2011"] .chat, html[data-mtheme="i2009"] .chat { background: #f2f2f2; }
+html[data-mtheme="i2009"] .msg .text, html[data-mtheme="i2010"] .msg .text, html[data-mtheme="i2011"] .msg .text {
+  background: linear-gradient(#e7f3fc, #cfe7f8); color: #1b1b1b; border: 1px solid #a9cbe6; border-radius: 6px !important;
+}
+html[data-mtheme="i2009"] .msg.mine .text, html[data-mtheme="i2010"] .msg.mine .text, html[data-mtheme="i2011"] .msg.mine .text {
+  background: linear-gradient(#fff, #eef2f5); border-color: #c9d1d8; color: #1b1b1b;
+}
+html[data-mtheme="i2009"] .msg.mine .meta, html[data-mtheme="i2010"] .msg.mine .meta, html[data-mtheme="i2011"] .msg.mine .meta,
+html[data-mtheme="i2009"] .msg.mine .meta .ticks, html[data-mtheme="i2010"] .msg.mine .meta .ticks, html[data-mtheme="i2011"] .msg.mine .meta .ticks { color: #7d8a96; }
+html[data-mtheme="i2010"] .m-send, html[data-mtheme="i2011"] .m-send, html[data-mtheme="i2009"] .m-send { border-radius: 8px; background: linear-gradient(#8bb2e0, #3d70b6 51%, #3263a8); }
+
+/* ---------- iPhone 2012: witte wolkjes op grijs ---------- */
+html[data-mtheme="i2012"] .chat { background: #e3e6ea; }
+html[data-mtheme="i2012"] .msg .text { background: #fff; color: #1b1b1b; border-radius: 4px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+html[data-mtheme="i2012"] .msg.mine .text { background: #d4ecfa; }
+html[data-mtheme="i2012"] .msg.mine .meta, html[data-mtheme="i2012"] .msg.mine .meta .ticks { color: #6d8597; }
+html[data-mtheme="i2012"] .chat.group .msg.first .from { display: block !important; text-align: left; font-weight: 700; color: #1b1b1b; }
+
+/* ---------- iPhone 2013: iOS 7, plat ---------- */
+html[data-mtheme="i2013"] { --m-blue: #00aff0; --m-bubble: #d7f0fb; --m-other: #ececec; }
+html[data-mtheme="i2013"] .me, html[data-mtheme="i2013"] .conv-head { background: #00aff0 !important; color: #fff; }
+html[data-mtheme="i2013"] .me-status, html[data-mtheme="i2013"] .conv-head h1 { color: #fff; }
+html[data-mtheme="i2013"] .conv-head .sub2 { color: #d9f3fd; }
+html[data-mtheme="i2013"] .caret { border-top-color: #fff; }
+html[data-mtheme="i2013"] .conv-head .sbtn, html[data-mtheme="i2013"] .conv-head .back svg, html[data-mtheme="i2013"] .more-btn svg { color: #fff; fill: #fff; }
+html[data-mtheme="i2013"] .msg .text { border-radius: 10px !important; }
+html[data-mtheme="i2013"] .msg.mine .text { color: #1b1b1b; }
+html[data-mtheme="i2013"] .msg.mine .meta, html[data-mtheme="i2013"] .msg.mine .meta .ticks { color: #4f8aa5; }
+html[data-mtheme="i2013"] .chat.group .msg.first .from { display: block !important; text-align: left; color: #00aff0; }
+html[data-mtheme="i2013"] .mnav-pill { background: #f7f7f7; border-color: #d8d8d8; border-radius: 0; }
+html[data-mtheme="i2013"] .mnav-pill button { border-radius: 0; }
+html[data-mtheme="i2013"] .mnav-pill button.on { background: none; color: #00aff0; }
+html[data-mtheme="i2013"] .mnav-add { border-radius: 0; background: #7cc142; border-color: #6aae32; }
+
+/* ---------- 2021: donker ---------- */
+html[data-mtheme="m2021"] { --m-blue: #3a96dd; --m-bubble: #2b5e8c; --m-other: #2a2a2e; }
+html[data-mtheme="m2021"] .me { text-align: center; }
+html[data-mtheme="m2021"] .msg .text { border-radius: 14px !important; }
+html[data-mtheme="m2021"] .list-av { width: 48px; height: 48px; }
+html[data-mtheme="m2021"] .mnav-pill { background: #1f1f23 !important; border-color: #2c2c31 !important; }
+html[data-mtheme="m2021"] .mnav-pill button.on { background: #1d3a54 !important; color: #8fc8f5 !important; }
+html[data-mtheme="m2021"] .mnav-add { background: #3a96dd; border: 0; border-radius: 18px; }
+}
