@@ -220,6 +220,7 @@ class SkittaService : Service() {
         when (e.optString("t")) {
             "msg" -> onMessage(e.getJSONObject("m"))
             "call" -> onCall(e)
+            "gcall" -> onGroupCall(e)
             "contacts" -> {
                 val from = e.optLong("request", 0L)
                 Thread { refreshNames() }.start()
@@ -288,6 +289,23 @@ class SkittaService : Service() {
                     Thread { Meldingen.show(this, if (conv != 0L) conv.toInt() else Meldingen.CALL_ID + 1, Meldingen.CH_BERICHTEN, nameOf(from), "Gemiste oproep", conv) }.start()
                 }
             }
+        }
+    }
+
+    // Groepsgesprek: één belmelding bij het begin; weg zodra je (op een ander apparaat) reageert of het stopt.
+    private fun onGroupCall(e: JSONObject) {
+        val d = e.optJSONObject("d") ?: return
+        val g = e.optLong("g")
+        val from = e.optLong("from")
+        when (d.optString("type")) {
+            "ring" -> {
+                if (from == myId || MainActivity.inFront || !rings.add(d.optString("id"))) return
+                Thread {
+                    val title = convTitles[g] ?: "Groepsgesprek"
+                    Meldingen.call(this, title, d.optBoolean("video"), g, "${nameOf(from)} is een groepsgesprek begonnen")
+                }.start()
+            }
+            "taken", "end" -> (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(Meldingen.CALL_ID)
         }
     }
 
@@ -418,13 +436,13 @@ object Meldingen {
         if (left == 0) nm.cancel(SUMMARY_ID)
     }
 
-    fun call(context: Context, name: String, video: Boolean, c: Long) {
+    fun call(context: Context, name: String, video: Boolean, c: Long, text: String? = null) {
         val open = openApp(context, c)
         val n = Notification.Builder(context, CH_OPROEPEN)
             .setSmallIcon(R.drawable.ic_stat)
             .setColor(context.getColor(R.color.accent))
             .setContentTitle(name)
-            .setContentText(if (video) "wil met je videobellen" else "belt je")
+            .setContentText(text ?: if (video) "wil met je videobellen" else "belt je")
             .setCategory(Notification.CATEGORY_CALL)
             .setOngoing(true)
             .setAutoCancel(true)

@@ -132,6 +132,8 @@ export class Hub extends DurableObject {
       return;
     }
 
+    if (m.t === 'gcall') return this.groupCall(ws, a, m);
+
     // Bel-signalen: alleen tussen geaccepteerde contactpersonen, of naar je eigen andere apparaten.
     if (m.t === 'call') {
       const to = Number(m.to);
@@ -145,6 +147,42 @@ export class Hub extends DurableObject {
       const event = { t: 'call', from: a.uid, dev: a.dev, d: m.d };
       const n = this.send([to], event, to === a.uid ? { notDev: a.dev } : { dev: m.dev || undefined });
       if (!n && m.d.type === 'ring' && to !== a.uid) await this.ringAway(ws, a.uid, to, m.d);
+    }
+  }
+
+  // Groepsgesprek: signalen tussen leden van dezelfde groep (die hoeven geen contactpersonen te zijn).
+  // Zonder `to` gaat het naar alle leden (aankondigen, deelnemen, weggaan); met `to` naar één lid.
+  async groupCall(ws, a, m) {
+    const g = Number(m.g);
+    if (!g || !m.d || typeof m.d !== 'object') return;
+    const conv = await this.cached(`g${g}`, 60_000, async () => {
+      const c = await this.env.DB.prepare("SELECT topic FROM conversations WHERE id = ? AND kind = 'group'").bind(g).first();
+      if (!c) return null;
+      const ids = (await this.env.DB.prepare('SELECT user_id FROM members WHERE conversation_id = ? AND left_at IS NULL').bind(g).all()).results.map((r) => r.user_id);
+      return { topic: c.topic, ids };
+    });
+    if (!conv || !conv.ids.includes(a.uid)) return;
+    const event = { t: 'gcall', g, from: a.uid, dev: a.dev, d: m.d };
+    const to = Number(m.to);
+    if (to) {
+      if (!conv.ids.includes(to)) return;
+      this.send([to], event, to === a.uid ? { notDev: a.dev } : { dev: m.dev || undefined });
+      return;
+    }
+    const others = conv.ids.filter((id) => id !== a.uid);
+    this.send(others, event);
+    this.send([a.uid], event, { notDev: a.dev });
+    // Wie helemaal niet online is, krijgt bij het begin van het gesprek één pushmelding.
+    if (m.d.type === 'ring') {
+      this.pushed ||= new Set();
+      if (this.pushed.has(m.d.id)) return;
+      this.pushed.add(m.d.id);
+      const away = others.filter((id) => !this.state(id).conns);
+      if (!away.length) return;
+      const caller = await this.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(a.uid).first();
+      this.ctx.waitUntil(pushTo(this.env, away, {
+        t: 'call', title: conv.topic || 'Groepsgesprek', body: `${caller?.display_name || 'Iemand'} is een groepsgesprek begonnen`, tag: 'call', c: g
+      }, { ttl: 60 }).catch(() => {}));
     }
   }
 

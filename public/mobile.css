@@ -404,3 +404,46 @@
   .sm-seg button.on { background: var(--m-blue); }
   .msg.bare .meta { background: rgba(0, 0, 0, .45); color: #fff; padding: 1px 6px; border-radius: 9px; }
 }
+
+@media (max-width: 720px) {
+  .gstage { padding: calc(10px + var(--sat, 0px)) 10px 76px; }
+  .gstage .tiles.n3, .gstage .tiles.n4, .gstage .tiles.n5, .gstage .tiles.n6 { grid-template-columns: 1fr 1fr; }
+  .gstage .tiles.n2 { grid-template-columns: 1fr; }
+  .callbar.join { background: rgba(52, 199, 89, .14); border: 0; }
+  html[data-mode="dark"] .callbar.join { background: rgba(52, 199, 89, .2); color: var(--m-text); }
+  .group-info .about-field { border-radius: 12px; font-size: 16px; }
+}
+
+/* ---------- App (standaardontwerp): blur die naar onderen toe wegloopt in plaats van een harde rand ---------- */
+/* Twee lagen: bovenin sterk vervaagd en gekleurd, naar onderen toe steeds minder, zonder lijn. */
+@media (max-width: 720px) {
+  html.app-mode:not([data-mtheme]) { --m-tint: rgba(255, 255, 255, .82); }
+  html.app-mode[data-mode="dark"]:not([data-mtheme]) { --m-tint: rgba(18, 20, 22, .82); }
+  html.app-mode:not([data-mtheme]) .me,
+  html.app-mode:not([data-mtheme]) .conv-head {
+    background: transparent !important; border-bottom-color: transparent !important; box-shadow: none !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; isolation: isolate;
+  }
+  html.app-mode:not([data-mtheme]) .me::before,
+  html.app-mode:not([data-mtheme]) .conv-head::before,
+  html.app-mode:not([data-mtheme]) .me::after,
+  html.app-mode:not([data-mtheme]) .conv-head::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: -34px; z-index: -1; pointer-events: none;
+  }
+  html.app-mode:not([data-mtheme]) .me::before,
+  html.app-mode:not([data-mtheme]) .conv-head::before {
+    background: linear-gradient(to bottom, var(--m-tint) 0%, var(--m-tint) 40%, transparent 100%);
+    -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 82%); mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 82%);
+  }
+  html.app-mode:not([data-mtheme]) .me::after,
+  html.app-mode:not([data-mtheme]) .conv-head::after {
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 35%, #000 62%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 35%, #000 62%, transparent 100%);
+  }
+}
+@media (max-width: 720px) {
+  .group-info .avatar.xl { border-radius: 50%; width: 88px; height: 88px; }
+  .group-info .profile-photo { flex-wrap: wrap; }
+  .group-info .profile-photo .btn { max-width: 100%; white-space: nowrap; }
+}

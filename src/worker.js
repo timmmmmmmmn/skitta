@@ -565,7 +565,7 @@ const MSG_FROM = 'messages m LEFT JOIN media x ON x.id = m.media_id';
 
 async function conversationsFor(env, user, onlyId) {
   const { results: convs } = await env.DB.prepare(
-    `SELECT c.id, c.kind, c.topic, c.created_by, c.created_at, c.last_at, c.key_version, c.rotate, c.expire,
+    `SELECT c.id, c.kind, c.topic, c.avatar_id, c.about, c.created_by, c.created_at, c.last_at, c.key_version, c.rotate, c.expire,
             m.left_at, m.last_read, m.muted_until, m.pinned, m.archived,
             (SELECT COUNT(*) FROM messages z WHERE z.conversation_id = c.id AND z.id > m.last_read
                AND (z.sender_id IS NULL OR z.sender_id != ?) AND z.kind != 'system' AND z.deleted_at IS NULL) AS unread
@@ -602,7 +602,7 @@ async function conversationsFor(env, user, onlyId) {
   }
   const last = new Map(lasts.results.map((m) => [m.conversation_id, msgOut(m)]));
   return convs.map((c) => ({
-    id: c.id, kind: c.kind, topic: c.topic, created_by: c.created_by, last_at: c.last_at,
+    id: c.id, kind: c.kind, topic: c.topic, avatar: c.avatar_id || null, about: c.about || '', created_by: c.created_by, last_at: c.last_at,
     left: !!c.left_at, last_read: c.last_read, unread: c.unread, key_version: c.key_version, rotate: !!c.rotate,
     expire: c.expire, muted_until: c.muted_until, pinned: !!c.pinned, archived: !!c.archived,
     members: byConv.get(c.id), last: last.get(c.id) || null,
@@ -724,11 +724,55 @@ async function updateConversation(env, user, convId, request) {
   const conv = await memberOf(env, user, convId);
   if (conv.kind !== 'group') throw new HttpError(400, 'Alleen groepen hebben een onderwerp');
   const b = await body(request);
-  const topic = str(b.topic, 100);
+  const t = now();
+  const steps = [];
+  if (b.topic !== undefined) {
+    const topic = str(b.topic, 100);
+    if (topic !== conv.topic) {
+      steps.push(env.DB.prepare('UPDATE conversations SET topic = ? WHERE id = ?').bind(topic, convId), systemMessage(env, convId, user.id, { e: 'topic', topic }, t));
+    }
+  }
+  if (b.about !== undefined) {
+    const about = String(b.about ?? '').replace(/\r\n/g, '\n').trim().slice(0, 500);
+    if (about !== (conv.about || '')) {
+      steps.push(env.DB.prepare('UPDATE conversations SET about = ? WHERE id = ?').bind(about, convId), systemMessage(env, convId, user.id, { e: 'about' }, t));
+    }
+  }
+  if (!steps.length) return json({ ok: true });
+  steps.push(env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId));
+  await env.DB.batch(steps);
+  await broadcastLatest(env, convId);
+  return json({ ok: true });
+}
+
+// Groepsafbeelding: net als een profielfoto (verkleind, niet versleuteld, zichtbaar voor de leden).
+async function setGroupAvatar(env, user, convId, request) {
+  const conv = await memberOf(env, user, convId);
+  if (conv.kind !== 'group') throw new HttpError(400, 'Alleen groepen hebben een afbeelding');
+  const img = await readImage(env, request);
+  if (img.buf.length > 600_000) throw new HttpError(413, 'Deze afbeelding is te groot');
+  const id = randomToken(18);
+  await mediaStore(env, user.id, id, img);
+  const t = now();
   await env.DB.batch([
-    env.DB.prepare('UPDATE conversations SET topic = ?, last_at = ? WHERE id = ?').bind(topic, now(), convId),
-    systemMessage(env, convId, user.id, { e: 'topic', topic })
+    mediaInsert(env, id, user.id, null, img, 0, 0),
+    env.DB.prepare('UPDATE conversations SET avatar_id = ?, last_at = ? WHERE id = ?').bind(id, t, convId),
+    systemMessage(env, convId, user.id, { e: 'avatar' }, t)
   ]);
+  await mediaDelete(env, [conv.avatar_id]);
+  await broadcastLatest(env, convId);
+  return json({ avatar: id });
+}
+
+async function removeGroupAvatar(env, user, convId) {
+  const conv = await memberOf(env, user, convId);
+  if (conv.kind !== 'group' || !conv.avatar_id) return json({ ok: true });
+  const t = now();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE conversations SET avatar_id = NULL, last_at = ? WHERE id = ?').bind(t, convId),
+    systemMessage(env, convId, user.id, { e: 'avatar', removed: true }, t)
+  ]);
+  await mediaDelete(env, [conv.avatar_id]);
   await broadcastLatest(env, convId);
   return json({ ok: true });
 }
@@ -1369,6 +1413,8 @@ async function route(request, env, url) {
     if (id && c === 'big' && m === 'POST') return bigTicket(env, user, id, request);
     if (id && c === 'bigmsg' && m === 'POST') return sendBig(env, user, id, request);
     if (id && c === 'expire' && m === 'PATCH') return setExpire(env, user, id, request);
+    if (id && c === 'avatar' && m === 'PUT') return setGroupAvatar(env, user, id, request);
+    if (id && c === 'avatar' && m === 'DELETE') return removeGroupAvatar(env, user, id);
     if (id && c === 'members' && !d && m === 'POST') return addMembers(env, user, id, request);
     if (id && c === 'members' && d === 'me' && m === 'DELETE') return leaveConversation(env, user, id);
   }

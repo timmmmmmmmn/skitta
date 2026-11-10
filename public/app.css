@@ -640,3 +640,22 @@ mark { background: #ffe25c; color: inherit; border-radius: 2px; }
 .sm-row input[type="range"] { flex: 1; }
 .sm-row[hidden] { display: none; }
 .sm-hint { margin: 0; font-size: 12px; }
+
+/* Groepsgesprek: een tegel per deelnemer */
+.gstage { justify-content: stretch; align-items: stretch; padding: 10px 10px 58px; }
+.gstage .tiles { flex: 1; min-height: 0; display: grid; gap: 8px; grid-template-columns: 1fr; grid-auto-rows: 1fr; }
+.gstage .tiles.n2, .gstage .tiles.n3, .gstage .tiles.n4 { grid-template-columns: 1fr 1fr; }
+.gstage .tiles.n5, .gstage .tiles.n6 { grid-template-columns: repeat(3, 1fr); }
+.gstage .tile { position: relative; min-height: 0; border-radius: 12px; overflow: hidden; background: rgba(255, 255, 255, .07); display: grid; place-items: center; }
+.gstage .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gstage .tile video.mine { transform: scaleX(-1); }
+.gstage .tile .avatar.xl { width: 72px; height: 72px; border-color: rgba(255, 255, 255, .4); }
+.gstage .tname { position: absolute; left: 8px; bottom: 6px; z-index: 1; padding: 1px 8px; border-radius: 9px; background: rgba(0, 0, 0, .5); color: #fff; font-size: 12px; }
+.gstage .gstate { position: absolute; top: 12px; left: 0; right: 0; z-index: 2; text-align: center; color: #d4e1ea; font-size: 13px; text-shadow: 0 1px 2px #000; }
+.callbar.join { background: linear-gradient(#e9f8e0, #d3efc0); border-color: #a8d68a; }
+
+/* Groepsinfo */
+.group-info h3 { margin: 6px 0 8px; font-size: 13px; font-weight: 600; }
+.group-info .about-field { height: auto; min-height: 64px; resize: vertical; font: inherit; padding: 6px 8px; }
+.group-members { display: grid; gap: 6px; max-height: 220px; overflow-y: auto; }
+.group-members .gm { display: flex; align-items: center; gap: 8px; }

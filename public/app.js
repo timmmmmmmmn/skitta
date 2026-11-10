@@ -722,6 +722,13 @@ function userOf(id) {
 
 const nameOf = (id) => userOf(id).display_name || userOf(id).username;
 
+// Groep: eigen afbeelding als die er is, anders het standaardplaatje met twee poppetjes.
+function groupAvatar(conv, cls = '') {
+  const a = h('span', { class: `avatar group-av ${cls}` });
+  if (conv?.avatar) a.style.background = `url("/api/media/${encodeURIComponent(conv.avatar)}") center / cover no-repeat`;
+  return a;
+}
+
 function avatar(u, cls = '', status) {
   const a = h('span', { class: `avatar ${cls} ${u?.avatar ? '' : 'none'}` });
   if (u?.avatar) a.style.backgroundImage = `url("/api/media/${encodeURIComponent(u.avatar)}")`;
@@ -1042,6 +1049,7 @@ function onEvent(e) {
     case 'contacts': return onContacts(e);
     case 'conv': return onConv(e);
     case 'call': return Call.onSignal(e);
+    case 'gcall': return GroupCall.onSignal(e);
     case 'keys': return onKeys(e);
     case 'announcement':
       S.me.announcement = e.text;
@@ -1142,7 +1150,8 @@ async function onMessage(m) {
   if (isNew && m.k === 'system') {
     const d = parseJson(m.b);
     if (d.e === 'topic') conv.topic = d.topic;
-    if (d.e === 'added' || d.e === 'left') await loadConvs();
+    if (['added', 'left', 'avatar', 'about'].includes(d.e)) await loadConvs();
+    if (S.cur === m.c && ['avatar', 'about', 'topic'].includes(d.e)) renderHead();
     if (d.e === 'added' && m.u !== S.me.id) Sound.play('USER_ADDED');
     if (d.e === 'left' && m.u !== S.me.id) Sound.play('USER_LEFT');
   }
@@ -1228,6 +1237,8 @@ function systemText(m) {
     case 'left': return `${who} ${m.u === S.me.id ? 'hebt' : 'heeft'} dit gesprek verlaten`;
     case 'topic': return d.topic ? `${who} heeft het onderwerp gewijzigd in "${d.topic}"` : `${who} heeft het onderwerp verwijderd`;
     case 'expire': return d.s ? `${who} heeft verdwijnende berichten ingesteld op ${expireLabel(d.s)}` : `${who} heeft verdwijnende berichten uitgezet`;
+    case 'about': return `${who} heeft de groepsbeschrijving gewijzigd`;
+    case 'avatar': return d.removed ? `${who} heeft de groepsafbeelding verwijderd` : `${who} heeft de groepsafbeelding gewijzigd`;
     default: return '';
   }
 }
@@ -1527,7 +1538,7 @@ function convRow(conv) {
     onclick: () => openConv(conv.id),
     oncontextmenu: (e) => { e.preventDefault(); convMenu(conv, e.clientX, e.clientY); }
   },
-  conv.kind === 'direct' ? avatar(S.contacts.get(otherId(conv)) || userOf(otherId(conv)), 'list-av', st) : h('span', { class: 'avatar group-av list-av' }),
+  conv.kind === 'direct' ? avatar(S.contacts.get(otherId(conv)) || userOf(otherId(conv)), 'list-av', st) : groupAvatar(conv, 'list-av'),
   h('span', { class: `st ${st}` }),
   h('div', { class: 'two' }, h('span', { class: 'name' }, convTitle(conv)), h('span', { class: 'mood' }, lastText)),
   h('div', { class: 'side-info' },
@@ -1638,7 +1649,7 @@ function renderPane() {
   const focused = old && document.activeElement === old ? [old.selectionStart, old.selectionEnd] : null;
   pane.replaceChildren(...[
     h('header', { class: 'conv-head', id: 'conv-head' }),
-    Call.view(conv),
+    Call.view(conv) || GroupCall.view(conv),
     findBar(conv),
     keyWarning(conv),
     stickyChat(h('div', { class: 'chat', id: 'chat' })),
@@ -1663,7 +1674,7 @@ function renderHead() {
   const conv = S.convs.get(S.cur);
   if (!head || !conv) return;
   const back = h('button', { class: 'tool back', title: 'Terug', onclick: () => { saveDraft(); showPaneOnMobile(false); } }, svg('back'));
-  const inCall = Call.active || Call.incoming;
+  const inCall = Call.active || Call.incoming || GroupCall.active;
   if (conv.kind === 'direct') {
     const c = S.contacts.get(otherId(conv)) || userOf(otherId(conv));
     const st = statusClass(S.contacts.get(c.id));
@@ -1685,10 +1696,10 @@ function renderHead() {
     const members = conv.members.filter((m) => !m.left);
     head.replaceChildren(
       back,
-      h('span', { class: 'avatar lg group-av' }),
+      h('button', { class: 'avatar-btn', style: { border: 0, padding: 0, background: 'none' }, title: 'Groepsinfo', onclick: () => groupInfoDialog(conv) }, groupAvatar(conv, 'lg')),
       h('div', { class: 'who' },
         h('h1', null, h('span', null, convTitle(conv))),
-        h('div', { class: 'sub' }, conv.left ? 'Je hebt dit gesprek verlaten' : `${members.length} deelnemers`),
+        h('div', { class: 'sub' }, conv.left ? 'Je hebt dit gesprek verlaten' : conv.about ? `${members.length} deelnemers · ${conv.about.split('\n')[0]}` : `${members.length} deelnemers`),
         h('div', { class: 'member-strip' }, members.slice(0, 16).map((m) => {
           const c = S.contacts.get(m.id);
           const a = avatar(m, 'sm', m.id === S.me.id ? myPresence() : statusClass(c));
@@ -1696,7 +1707,9 @@ function renderHead() {
           return a;
         }))),
       h('div', { class: 'actions' },
-        h('button', { class: 'btn', disabled: conv.left, onclick: () => topicDialog(conv) }, 'Onderwerp'),
+        h('button', { class: 'sbtn blue', disabled: conv.left || inCall, onclick: () => GroupCall.start(conv.id, true), title: 'Groepsvideogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
+        h('button', { class: 'sbtn green', disabled: conv.left || inCall, onclick: () => GroupCall.start(conv.id, false), title: 'Groep bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
+        h('button', { class: 'btn', onclick: () => groupInfoDialog(conv) }, 'Groepsinfo'),
         h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: conv.left, onclick: () => addPeopleDialog(conv) }, svg('plus')),
         moreButton(conv))
     );
@@ -2986,7 +2999,7 @@ function convMenu(conv, x, y) {
     ...convOptions(conv),
     '-',
     conv.unread ? { label: 'Markeren als gelezen', run: () => markRead(conv.id, conv.last?.id) } : null,
-    conv.kind === 'group' && !conv.left && { label: 'Onderwerp wijzigen…', icon: 'pencil', run: () => topicDialog(conv) },
+    conv.kind === 'group' && { label: 'Groepsinfo…', icon: 'pencil', run: () => groupInfoDialog(conv) },
     conv.kind === 'group' && !conv.left && { label: 'Personen toevoegen…', icon: 'plus', run: () => addPeopleDialog(conv) },
     conv.kind === 'group' && !conv.left && '-',
     conv.kind === 'group' && !conv.left && { label: 'Gesprek verlaten', icon: 'trash', run: () => leaveConv(conv) }
@@ -3464,7 +3477,7 @@ function buildMenubar() {
       return [
         { label: 'Foto versturen…', icon: 'photo', disabled: !conv || conv.left, run: () => document.querySelector('.compose input[type=file]')?.click() },
         { label: 'Personen toevoegen…', icon: 'plus', disabled: !conv || conv.left, run: () => (group ? addPeopleDialog(conv) : groupDialog([otherId(conv)])) },
-        { label: 'Onderwerp wijzigen…', icon: 'pencil', disabled: !group, run: () => topicDialog(conv) },
+        { label: 'Groepsinfo…', icon: 'pencil', disabled: !group, run: () => groupInfoDialog(conv) },
         '-',
         { label: 'Zoeken in gesprek…', icon: 'search', key: 'Ctrl+F', disabled: !conv, run: openFind },
         { label: 'Alles als gelezen markeren', run: markAllRead },
@@ -3588,7 +3601,7 @@ function callRow(m) {
   const what = d.failed ? 'Mislukt' : d.missed ? (mine ? 'Niet beantwoord' : 'Gemist') : `${mine ? 'Uitgaand' : 'Inkomend'} · ${duration(d.dur || 0)}`;
   const canCall = peer && S.contacts.get(peer.id)?.state === 'ok';
   return h('div', { class: `row rich call-row ${missed ? 'missed' : ''}`, onclick: () => openConv(conv.id) },
-    peer ? avatar(peer, 'list-av', statusClass(S.contacts.get(peer.id))) : h('span', { class: 'avatar group-av list-av' }),
+    peer ? avatar(peer, 'list-av', statusClass(S.contacts.get(peer.id))) : groupAvatar(S.convs.get(m.c), 'list-av'),
     h('div', { class: 'two' }, h('span', { class: 'name' }, convTitle(conv)),
       h('span', { class: 'mood' }, h('span', { class: 'call-dir' }, mine ? '↗' : '↙'), ` ${d.video ? 'Video · ' : ''}${what}`)),
     h('div', { class: 'side-info' }, h('span', { class: 'when' }, shortWhen(m.at)),
@@ -4077,15 +4090,58 @@ async function addPeopleDialog(conv) {
     }, { label: 'Annuleren', value: null }]);
 }
 
-async function topicDialog(conv) {
-  const input = h('input', { class: 'field', maxlength: 100, value: conv.topic });
+// Groepsinfo: afbeelding, naam en beschrijving (iedereen in de groep mag ze wijzigen), plus wie erin zit.
+async function groupInfoDialog(conv) {
+  const canEdit = !conv.left;
+  const av = groupAvatar(conv, 'xl');
+  const name = h('input', { class: 'field', maxlength: 100, value: conv.topic, placeholder: convTitle(conv), disabled: !canEdit });
+  const about = h('textarea', { class: 'field about-field', maxlength: 500, rows: 3, placeholder: 'Waar gaat deze groep over?', disabled: !canEdit }, conv.about || '');
+  about.value = conv.about || '';
   const err = h('div', { class: 'err' });
-  await dialog('Onderwerp wijzigen', h('div', null, h('div', { class: 'frow' }, h('label', null, 'Onderwerp van dit gesprek'), input), err),
-    [{
+  const file = h('input', {
+    type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
+      const f = file.files[0];
+      if (!f) return;
+      try {
+        const r = await api('PUT', `conversations/${conv.id}/avatar`, await squareImage(f));
+        conv.avatar = r.avatar;
+        av.style.background = `url("/api/media/${encodeURIComponent(r.avatar)}") center / cover no-repeat`;
+        renderHead();
+        renderList();
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    }
+  });
+  const members = conv.members.filter((m) => !m.left);
+  await dialog('Groepsinfo', h('div', { class: 'group-info' },
+    h('div', { class: 'profile-top' },
+      h('div', { class: 'profile-photo' }, av,
+        canEdit ? h('button', { class: 'btn', type: 'button', onclick: () => file.click() }, 'Afbeelding wijzigen…') : null,
+        canEdit && conv.avatar ? h('a', { href: '#', onclick: async (e) => {
+          e.preventDefault();
+          try {
+            await api('DELETE', `conversations/${conv.id}/avatar`);
+            conv.avatar = null;
+            av.style.background = '';
+            renderHead();
+            renderList();
+          } catch (x) { err.textContent = x.message; }
+        } }, 'Afbeelding verwijderen') : null, file),
+      h('div', { class: 'grow' },
+        h('div', { class: 'frow' }, h('label', null, 'Naam van de groep'), name),
+        h('div', { class: 'frow' }, h('label', null, 'Beschrijving'), about))),
+    h('h3', null, `${members.length} deelnemers`),
+    h('div', { class: 'group-members' }, members.map((m) => h('div', { class: 'gm' },
+      avatar(m, '', m.id === S.me.id ? myPresence() : statusClass(S.contacts.get(m.id))),
+      h('span', null, m.id === S.me.id ? `${m.display_name} (jij)` : m.display_name)))),
+    err),
+    canEdit ? [{
       label: 'Opslaan', default: true, run: async (close) => {
         try {
-          await api('PATCH', `conversations/${conv.id}`, { topic: input.value });
-          conv.topic = input.value.trim();
+          await api('PATCH', `conversations/${conv.id}`, { topic: name.value, about: about.value });
+          conv.topic = name.value.trim();
+          conv.about = about.value.trim();
           renderHead();
           renderList();
           close(true);
@@ -4093,7 +4149,7 @@ async function topicDialog(conv) {
           err.textContent = e.message;
         }
       }
-    }, { label: 'Annuleren', value: null }]);
+    }, { label: 'Annuleren', value: null }] : [{ label: 'Sluiten', value: null }]);
 }
 
 async function leaveConv(conv) {
@@ -4682,6 +4738,354 @@ function pushCard() {
 // Audio en video krijgen allebei vanaf het begin een transceiver, zodat video aan/uit zetten
 // zonder nieuwe onderhandeling kan (replaceTrack).
 
+// ---------- Groepsgesprekken ----------
+// Iedereen maakt een eigen verbinding met iedere andere deelnemer (geschikt voor een kleine groep).
+// Aankondigen, deelnemen en weggaan gaan naar de hele groep; het opzetten van een verbinding
+// (offer/answer/ICE) gaat versleuteld met de groepssleutel naar één deelnemer. Wie al in het gesprek
+// zit, belt de nieuwkomer op, zodat er nooit twee kanten tegelijk beginnen.
+const GroupCall = {
+  active: null,
+  incoming: null,
+  running: new Map(), // groep -> { id, video, at } van gesprekken die nu bezig zijn (voor "Deelnemen")
+
+  send(g, d, to, dev) {
+    Call.sendQueue = Call.sendQueue.then(async () => {
+      let out = d;
+      if (['offer', 'answer', 'ice', 'media'].includes(d.type)) {
+        const { type, id, ...rest } = d;
+        try { out = { type, id, enc: (await E2E.encrypt(g, JSON.stringify(rest))).body }; } catch { return; }
+      }
+      Live.send({ t: 'gcall', g, to, dev, d: out });
+    });
+  },
+
+  busy() {
+    return !!(Call.active || Call.incoming || this.active);
+  },
+
+  async start(g, video) {
+    if (this.busy()) return toastError('Je bent al in gesprek');
+    const run = this.running.get(g);
+    if (run && Date.now() - run.at < 25000) return this.join(g, run.id, video);
+    await this.join(g, uid(), video, true);
+  },
+
+  async join(g, id, video, starter = false) {
+    if (Call.active || this.active) return toastError('Je bent al in gesprek');
+    if (!S.ws || S.ws.readyState !== 1) return toastError('Geen verbinding met Skitta');
+    this.dismissIncoming(false);
+    let local;
+    try {
+      local = await Call.media(video);
+    } catch {
+      Sound.play('CALL_ERROR1', { force: true });
+      return alertDialog('Bellen', 'Skitta kan je microfoon' + (video ? ' of camera' : '') + ' niet gebruiken. Sta dit toe en probeer het opnieuw.');
+    }
+    const a = this.active = { g, id, video, local, peers: new Map(), started: 0, starter, joinedAt: Date.now() };
+    Call.muted = false;
+    if (S.cur !== g) openConv(g);
+    Sound.play('CALL_INIT', { force: true });
+    if (starter) {
+      const ring = { type: 'ring', id, video };
+      this.send(g, ring);
+      // Een poosje herhalen, zodat wie Skitta net opent het ook nog binnenkrijgt.
+      a.reRing = setInterval(() => { if (this.active === a && Date.now() - a.joinedAt < 40000) this.send(g, ring); else clearInterval(a.reRing); }, 5000);
+    } else {
+      this.send(g, { type: 'join', id });
+    }
+    this.send(g, { type: 'taken', id }, S.me.id);
+    a.alive = setInterval(() => this.send(g, { type: 'alive', id, n: a.peers.size + 1 }), 10000);
+    a.turn = setInterval(() => { for (const p of a.peers.values()) Call.reportTurn(p); }, 60000);
+    this.running.set(g, { id, video, at: Date.now() });
+    this.refresh();
+  },
+
+  async peer(uid, dev, offerer) {
+    const a = this.active;
+    this.drop(uid, true);
+    const pc = new RTCPeerConnection({ iceServers: await Call.iceServers(), iceTransportPolicy: S.opts.relay ? 'relay' : 'all' });
+    const p = { uid, dev, pc, remote: new MediaStream(), video: false, pendingIce: [], audio: new Audio() };
+    p.audio.autoplay = true;
+    a.peers.set(uid, p);
+    pc.onicecandidate = (e) => { if (e.candidate) this.send(a.g, { type: 'ice', id: a.id, c: e.candidate.toJSON() }, uid, dev); };
+    pc.ontrack = (e) => {
+      p.remote.addTrack(e.track);
+      p.audio.srcObject = p.remote;
+      p.audio.play().catch(() => {});
+      this.refresh();
+    };
+    pc.onconnectionstatechange = () => {
+      if (this.active !== a || a.peers.get(uid) !== p) return;
+      const st = pc.connectionState;
+      if (st === 'connected') {
+        if (!a.started) {
+          a.started = Date.now();
+          a.tick = setInterval(() => Call.updateTimer(), 1000);
+        }
+        p.connected = true;
+        this.tune();
+        this.refresh();
+      } else if (st === 'failed' || st === 'closed') {
+        this.drop(uid);
+      }
+    };
+    if (offerer) {
+      pc.addTransceiver(a.local.getAudioTracks()[0], { direction: 'sendrecv', streams: [a.local] });
+      const v = a.local.getVideoTracks()[0];
+      if (v) pc.addTransceiver(v, { direction: 'sendrecv', streams: [a.local] });
+      else pc.addTransceiver('video', { direction: 'sendrecv' });
+    }
+    return p;
+  },
+
+  drop(uid, quiet = false) {
+    const a = this.active;
+    const p = a?.peers.get(uid);
+    if (!p) return;
+    a.peers.delete(uid);
+    Call.reportTurn(p);
+    p.pc.close();
+    p.audio.srcObject = null;
+    if (!quiet) {
+      Sound.play('USER_LEFT', { force: true });
+      this.refresh();
+    }
+  },
+
+  // Videokwaliteit verdelen: hoe meer deelnemers, hoe minder per verbinding (je stuurt naar iedereen apart).
+  tune() {
+    const a = this.active;
+    if (!a) return;
+    const n = Math.max(1, a.peers.size);
+    const bitrate = n <= 1 ? 1_500_000 : n <= 2 ? 900_000 : n <= 4 ? 500_000 : 300_000;
+    const scale = n <= 1 ? 1 : n <= 3 ? 1.5 : 2;
+    for (const p of a.peers.values()) {
+      for (const sender of p.pc.getSenders()) {
+        if (sender.track?.kind !== 'video') continue;
+        const prm = sender.getParameters();
+        if (!prm.encodings?.length) prm.encodings = [{}];
+        prm.encodings[0].maxBitrate = bitrate;
+        prm.encodings[0].scaleResolutionDownBy = scale;
+        sender.setParameters(prm).catch(() => {});
+      }
+    }
+  },
+
+  async onSignal(e) {
+    const g = Number(e.g);
+    const d = e.d || {};
+    if (d.enc) {
+      try { Object.assign(d, JSON.parse((await E2E.openEnvelope(g, d.enc)).text)); } catch { return; }
+    }
+    const a = this.active && this.active.g === g && this.active.id === d.id ? this.active : null;
+    const mine = e.from === S.me.id;
+    switch (d.type) {
+      case 'ring':
+      case 'alive':
+      case 'join': {
+        if (!mine) {
+          const was = this.running.get(g);
+          this.running.set(g, { id: d.id, video: !!d.video || !!was?.video, at: Date.now() });
+          if (!was || was.id !== d.id) this.refresh();
+        }
+        if (d.type === 'ring' && !mine && !this.busy() && !this.incoming && !Call.ended.has(d.id)) {
+          this.incoming = { g, id: d.id, from: e.from, video: !!d.video };
+          if (!S.convs.has(g)) await loadConvs();
+          this.showIncoming();
+        }
+        if (d.type === 'join' && a && !mine) {
+          // Nieuwkomer: wij bellen hem op.
+          const p = await this.peer(e.from, e.dev, true);
+          await p.pc.setLocalDescription(await p.pc.createOffer());
+          this.send(g, { type: 'offer', id: a.id, sdp: p.pc.localDescription.toJSON() }, e.from, e.dev);
+          Sound.play('USER_ADDED', { force: true });
+        }
+        if (d.type === 'ring' && a && !mine && !a.peers.has(e.from) && a.id !== d.id) return;
+        return;
+      }
+      case 'offer': {
+        if (!a) return;
+        const p = await this.peer(e.from, e.dev, false);
+        await p.pc.setRemoteDescription(d.sdp);
+        const [aTx, vTx] = p.pc.getTransceivers();
+        aTx.direction = 'sendrecv';
+        await aTx.sender.replaceTrack(a.local.getAudioTracks()[0] || null);
+        if (vTx) {
+          vTx.direction = 'sendrecv';
+          await vTx.sender.replaceTrack(a.local.getVideoTracks()[0] || null);
+        }
+        await p.pc.setLocalDescription(await p.pc.createAnswer());
+        this.send(g, { type: 'answer', id: a.id, sdp: p.pc.localDescription.toJSON() }, e.from, e.dev);
+        for (const c of p.pendingIce.splice(0)) p.pc.addIceCandidate(c).catch(() => {});
+        this.send(g, { type: 'media', id: a.id, video: !!a.local.getVideoTracks()[0] }, e.from, e.dev);
+        return;
+      }
+      case 'answer': {
+        const p = a?.peers.get(e.from);
+        if (!p) return;
+        await p.pc.setRemoteDescription(d.sdp);
+        for (const c of p.pendingIce.splice(0)) p.pc.addIceCandidate(c).catch(() => {});
+        this.send(g, { type: 'media', id: a.id, video: !!a.local.getVideoTracks()[0] }, e.from, e.dev);
+        return;
+      }
+      case 'ice': {
+        const p = a?.peers.get(e.from);
+        if (!p) return;
+        if (!p.pc.remoteDescription) p.pendingIce.push(d.c);
+        else p.pc.addIceCandidate(d.c).catch(() => {});
+        return;
+      }
+      case 'media': {
+        const p = a?.peers.get(e.from);
+        if (!p) return;
+        p.video = !!d.video;
+        this.refresh();
+        return;
+      }
+      case 'taken':
+        if (this.incoming?.id === d.id) this.dismissIncoming(false);
+        return;
+      case 'leave':
+        if (a) this.drop(e.from);
+        return;
+      case 'end':
+        if (this.running.get(g)?.id === d.id) { this.running.delete(g); this.refresh(); }
+    }
+  },
+
+  showIncoming() {
+    const inc = this.incoming;
+    const conv = S.convs.get(inc.g);
+    const u = userOf(inc.from);
+    Sound.play('CALL_IN', { loop: true, force: S.me.presence_pref !== 'dnd' && S.opts.sounds });
+    const box = h('div', { class: 'incoming', id: 'incoming' },
+      h('div', { class: 'ih' }, h('img', { src: '/img/favicon.png', alt: '' }), inc.video ? 'Groepsvideogesprek' : 'Groepsgesprek'),
+      h('div', { class: 'ib' }, groupAvatar(conv, 'lg'), h('div', null, h('div', { class: 'nm' }, conv ? convTitle(conv) : 'Groep'), h('div', { class: 'what' }, `${u.display_name} is een groepsgesprek begonnen`))),
+      h('div', { class: 'ibtns' },
+        h('button', { class: 'sbtn green', onclick: () => this.join(inc.g, inc.id, false) }, svg('phone'), 'Deelnemen'),
+        h('button', { class: 'sbtn blue', onclick: () => this.join(inc.g, inc.id, true) }, svg('video'), 'Met video'),
+        h('button', { class: 'sbtn red', onclick: () => this.dismissIncoming(true) }, svg('hangup'), 'Weigeren')));
+    document.body.append(box);
+    if (document.visibilityState !== 'visible' || !document.hasFocus()) showLocal(conv ? convTitle(conv) : 'Groepsgesprek', `${u.display_name} is een groepsgesprek begonnen`, inc.g, 'call');
+    inc.timeout = setTimeout(() => { if (this.incoming === inc) this.dismissIncoming(false); }, 40000);
+    this.refresh();
+  },
+
+  dismissIncoming(declined) {
+    const inc = this.incoming;
+    if (!inc) return;
+    clearTimeout(inc.timeout);
+    Call.ended.add(inc.id);
+    if (declined) this.send(inc.g, { type: 'taken', id: inc.id }, S.me.id);
+    Sound.stop('CALL_IN');
+    $('#incoming')?.remove();
+    this.incoming = null;
+    this.refresh();
+  },
+
+  hangup() {
+    const a = this.active;
+    if (!a) return;
+    this.active = null;
+    clearInterval(a.reRing);
+    clearInterval(a.alive);
+    clearInterval(a.turn);
+    clearInterval(a.tick);
+    Call.ended.add(a.id);
+    const last = a.peers.size === 0;
+    this.send(a.g, { type: last ? 'end' : 'leave', id: a.id });
+    for (const uid of [...a.peers.keys()]) { this.active = a; this.drop(uid, true); this.active = null; }
+    a.local.getTracks().forEach((t) => t.stop());
+    if (last) this.running.delete(a.g);
+    Sound.play('HANGUP', { force: true });
+    // Wie begon, zet het gesprek in de chat.
+    if (a.starter) {
+      const dur = a.started ? Math.round((Date.now() - a.started) / 1000) : 0;
+      api('POST', `conversations/${a.g}/messages`, { kind: 'call', duration: dur, video: a.video, missed: !dur }).then(upsertAndRender).catch(() => {});
+    }
+    this.refresh();
+  },
+
+  toggleMute() {
+    const a = this.active;
+    if (!a) return;
+    Call.muted = !Call.muted;
+    a.local.getAudioTracks().forEach((t) => { t.enabled = !Call.muted; });
+    Sound.play(Call.muted ? 'HOLD' : 'RESUME', { force: true });
+    this.refresh();
+  },
+
+  async toggleVideo() {
+    const a = this.active;
+    if (!a) return;
+    const cur = a.local.getVideoTracks()[0];
+    let track = null;
+    if (cur) {
+      cur.stop();
+      a.local.removeTrack(cur);
+    } else {
+      try {
+        track = (await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } })).getVideoTracks()[0];
+        a.local.addTrack(track);
+      } catch {
+        return toastError('Skitta kan je camera niet gebruiken');
+      }
+    }
+    a.video = !!track;
+    for (const p of a.peers.values()) {
+      await p.pc.getTransceivers()[1]?.sender.replaceTrack(track);
+    }
+    this.tune();
+    this.send(a.g, { type: 'media', id: a.id, video: a.video });
+    this.refresh();
+  },
+
+  view(conv) {
+    const a = this.active;
+    if (a && a.g !== conv.id) {
+      const other = S.convs.get(a.g);
+      return h('div', { class: 'callbar' }, svg('phone'), h('span', { class: 'grow' }, `Groepsgesprek in ${other ? convTitle(other) : 'een groep'} `, h('span', { class: 'call-timer' }, '')),
+        h('a', { href: '#', onclick: (e) => { e.preventDefault(); openConv(a.g); } }, 'Naar gesprek'),
+        h('button', { class: 'sbtn red', style: { height: '24px' }, onclick: () => this.hangup() }, 'Ophangen'));
+    }
+    if (!a) {
+      const run = conv.kind === 'group' && this.running.get(conv.id);
+      if (!run || Date.now() - run.at > 25000 || Call.active || conv.left) return null;
+      return h('div', { class: 'callbar join' }, svg('phone'), h('span', { class: 'grow' }, 'Er is een groepsgesprek bezig'),
+        h('button', { class: 'sbtn green', style: { height: '24px' }, onclick: () => this.join(conv.id, run.id, false) }, 'Deelnemen'),
+        h('button', { class: 'sbtn blue', style: { height: '24px' }, onclick: () => this.join(conv.id, run.id, true) }, 'Met video'));
+    }
+    const tile = (u, stream, video, me) => {
+      const v = h('video', { autoplay: true, playsinline: true, muted: true, class: me ? 'mine' : '' });
+      v.srcObject = stream;
+      v.hidden = !video;
+      setTimeout(() => v.play().catch(() => {}), 0);
+      return h('div', { class: `tile ${video ? 'has-video' : ''}` }, v,
+        video ? null : avatar(u, 'xl'),
+        h('div', { class: 'tname' }, me ? 'Jij' : u.display_name, me && Call.muted ? ' 🔇' : ''));
+    };
+    const peers = [...a.peers.values()];
+    const localV = a.local.getVideoTracks()[0];
+    const tiles = h('div', { class: `tiles n${Math.min(peers.length + 1, 6)}` },
+      peers.map((p) => tile(userOf(p.uid), p.remote, p.video && p.remote.getVideoTracks().length, false)),
+      tile(S.me, localV ? new MediaStream([localV]) : new MediaStream(), !!localV, true));
+    const state = peers.length ? '' : a.starter ? 'Wachten tot er iemand deelneemt…' : 'Verbinden…';
+    return h('div', { class: 'stage gstage has-video', id: 'stage' },
+      tiles,
+      a.started ? h('div', { class: 'timer call-timer' }, duration(Math.round((Date.now() - a.started) / 1000))) : null,
+      state ? h('div', { class: 'gstate' }, state) : null,
+      h('div', { class: 'bar' },
+        h('button', { class: `cbtn ${Call.muted ? 'off' : ''}`, title: Call.muted ? 'Microfoon aanzetten' : 'Microfoon dempen', onclick: () => this.toggleMute() }, svg(Call.muted ? 'micoff' : 'mic')),
+        h('button', { class: `cbtn ${localV ? '' : 'off'}`, title: localV ? 'Video uitzetten' : 'Video aanzetten', onclick: () => this.toggleVideo() }, svg(localV ? 'video' : 'videooff')),
+        h('button', { class: 'cbtn', title: 'Volledig scherm', onclick: () => $('#stage')?.requestFullscreen?.() }, svg('full')),
+        h('button', { class: 'sbtn red', onclick: () => this.hangup() }, svg('hangup'), 'Ophangen')));
+  },
+
+  refresh() {
+    Call.refresh();
+  }
+};
+
 const Call = {
   active: null,
   incoming: null,
@@ -4722,7 +5126,7 @@ const Call = {
   },
 
   async start(peer, video) {
-    if (this.active || this.incoming) return toastError('Je bent al in gesprek');
+    if (this.active || this.incoming || GroupCall.active) return toastError('Je bent al in gesprek');
     const contact = S.contacts.get(peer);
     if (contact?.state !== 'ok') return;
     if (!S.ws || S.ws.readyState !== 1) return toastError('Geen verbinding met Skitta');
@@ -4855,7 +5259,7 @@ const Call = {
     switch (d.type) {
       case 'ring': {
         if (this.ended.has(d.id) || c?.id === d.id) return;
-        if (c || this.incoming) {
+        if (c || this.incoming || GroupCall.active || GroupCall.incoming) {
           if (this.incoming?.id === d.id) return;
           this.signal(e.from, { type: 'busy', id: d.id }, e.dev);
           return;
@@ -5168,7 +5572,7 @@ const Call = {
   },
 
   updateTimer() {
-    const c = this.active;
+    const c = this.active || GroupCall.active;
     if (!c?.started) return;
     const s = duration(Math.round((Date.now() - c.started) / 1000));
     for (const el of document.querySelectorAll('.call-timer')) el.textContent = s;
@@ -5211,12 +5615,12 @@ const Call = {
   },
 
   refresh() {
-    try { window.SkittaNative?.callActive?.(!!this.active); } catch {}
+    try { window.SkittaNative?.callActive?.(!!(this.active || GroupCall.active)); } catch {}
     if (typeof S.cur === 'number') {
       const conv = S.convs.get(S.cur);
       const pane = $('#pane');
       const old = pane.querySelector('.stage, .callbar');
-      const next = conv ? this.view(conv) : null;
+      const next = conv ? this.view(conv) || GroupCall.view(conv) : null;
       if (old && next) old.replaceWith(next);
       else if (old) old.remove();
       else if (next) $('#conv-head')?.after(next);
