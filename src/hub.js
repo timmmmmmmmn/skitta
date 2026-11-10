@@ -21,6 +21,18 @@ export class Hub extends DurableObject {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
   }
 
+  // Kort onthouden wie in een gesprek zit en wie contact is, zodat typen en bel-signalen
+  // (soms tientallen per seconde tijdens het opzetten van een gesprek) niet steeds de database raken.
+  async cached(key, ttl, load) {
+    this.cache ||= new Map();
+    const hit = this.cache.get(key);
+    if (hit && hit.until > Date.now()) return hit.value;
+    const value = await load();
+    this.cache.set(key, { value, until: Date.now() + ttl });
+    if (this.cache.size > 2000) this.cache.clear();
+    return value;
+  }
+
   sockets(uid, except) {
     return this.ctx.getWebSockets(tag(uid)).filter((ws) => ws !== except && ws.readyState === 1);
   }
@@ -112,10 +124,9 @@ export class Hub extends DurableObject {
 
     if (m.t === 'typing') {
       const c = Number(m.c);
-      const { results } = await this.env.DB.prepare(
+      const ids = await this.cached(`m${c}`, 60_000, async () => (await this.env.DB.prepare(
         'SELECT user_id FROM members WHERE conversation_id = ? AND left_at IS NULL'
-      ).bind(c).all();
-      const ids = results.map((r) => r.user_id);
+      ).bind(c).all()).results.map((r) => r.user_id));
       if (!ids.includes(a.uid)) return;
       this.send(ids.filter((id) => id !== a.uid), { t: 'typing', c, u: a.uid, on: m.on !== false });
       return;
@@ -126,9 +137,9 @@ export class Hub extends DurableObject {
       const to = Number(m.to);
       if (!to || !m.d || typeof m.d !== 'object') return;
       if (to !== a.uid) {
-        const ok = await this.env.DB.prepare(
+        const ok = await this.cached(`c${to}:${a.uid}`, 120_000, async () => !!(await this.env.DB.prepare(
           "SELECT 1 FROM contacts WHERE user_id = ? AND contact_id = ? AND state = 'ok'"
-        ).bind(to, a.uid).first();
+        ).bind(to, a.uid).first()));
         if (!ok) return;
       }
       const event = { t: 'call', from: a.uid, dev: a.dev, d: m.d };

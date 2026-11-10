@@ -617,7 +617,7 @@ const Sound = {
   el(name) {
     const file = this.file(name);
     if (!this.cache.has(file)) {
-      const a = new Audio(`/sounds/${file}.wav`);
+      const a = new Audio(`/sounds/${file}.m4a`);
       a.preload = 'auto';
       this.cache.set(file, a);
     }
@@ -634,7 +634,7 @@ const Sound = {
     }
     if (!S.opts.sounds && !force) return;
     if (!force && S.me?.presence_pref === 'dnd' && !['LOGIN', 'LOGOUT', 'CALL_OUT', 'CALL_INIT', 'HANGUP', 'BUSY'].includes(name)) return;
-    const a = loop ? new Audio(`/sounds/${this.file(name)}.wav`) : this.el(name).cloneNode();
+    const a = loop ? new Audio(`/sounds/${this.file(name)}.m4a`) : this.el(name).cloneNode();
     a.loop = loop;
     a.volume = S.opts.volume;
     a.play().catch(() => {});
@@ -1127,7 +1127,23 @@ async function onMessage(m) {
   }
   updateTitle();
   renderList();
-  if (S.cur === m.c) renderMessages({ keepScroll: !isNew || m.u !== S.me.id });
+  if (S.cur === m.c && !(isNew && appendMessage(m))) renderMessages({ keepScroll: !isNew || m.u !== S.me.id });
+}
+
+// Een nieuw bericht onderaan toevoegen zonder de hele chat opnieuw op te bouwen.
+// Lukt dat niet netjes (zoeken, andere dag, verborgen, "Gezien"), dan bouwt renderMessages alles opnieuw.
+function appendMessage(m) {
+  const chat = $('#chat');
+  const conv = S.convs.get(m.c);
+  const list = bucket(m.c).list;
+  if (!chat || !conv || S.find || list.at(-1) !== list.find((x) => x.id === m.id) || chat.querySelector('.seen')) return false;
+  const prev = list.at(-2);
+  if (!prev || dayKey(prev.at) !== dayKey(m.at)) return false;
+  const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+  const first = prev.u !== m.u || prev.k === 'system' || m.k === 'system' || m.at - prev.at > 10 * 60e3;
+  chat.append(messageRow(m, first, conv));
+  if (nearBottom || m.u === S.me.id) chat.scrollTop = chat.scrollHeight;
+  return true;
 }
 
 function notifyMessage(conv, m) {
@@ -4484,6 +4500,12 @@ function setupSide() {
 }
 
 document.addEventListener('visibilitychange', () => {
+  // Terug in de app: is de verbinding weggevallen, dan meteen opnieuw (niet wachten op de volgende poging).
+  if (document.visibilityState === 'visible' && S.me && (!S.ws || S.ws.readyState > 1)) {
+    clearTimeout(Live.retry);
+    Live.delay = 1000;
+    Live.connect();
+  }
   if (document.visibilityState === 'visible' && typeof S.cur === 'number') {
     const last = S.convs.get(S.cur)?.last;
     if (last?.id && document.hasFocus()) markRead(S.cur, last.id);

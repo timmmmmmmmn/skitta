@@ -128,11 +128,9 @@ export async function tooManyAttempts(env, key, limit, windowMs) {
   return row.n >= limit;
 }
 
+// Oude pogingen ruimt de cron-taak elk kwartier op (niet bij elk bericht).
 export async function recordAttempt(env, key) {
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO attempts (key, at) VALUES (?, ?)').bind(key, now()),
-    env.DB.prepare('DELETE FROM attempts WHERE at < ?').bind(now() - 86400e3)
-  ]);
+  await env.DB.prepare('INSERT INTO attempts (key, at) VALUES (?, ?)').bind(key, now()).run();
 }
 
 export function clientIp(request) {
