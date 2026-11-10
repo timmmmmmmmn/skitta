@@ -9,6 +9,7 @@ import { Hub, effectivePresence } from './hub.js';
 import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport } from './limits.js';
 import { pushTo, vapidPublicKey } from './push.js';
 import { BIG, uploadTicket, downloadTicket } from './bigfiles.js';
+import { gifSearch, gifMedia } from './gifs.js';
 
 export { Hub };
 
@@ -1341,6 +1342,8 @@ async function route(request, env, url) {
   if (p === 'push' && m === 'DELETE') return pushUnsubscribe(env, user, request);
   if (a === 'keys' && m === 'GET') return listKeys(env, user, url);
   if (a === 'calls' && m === 'GET') return listCalls(env, user);
+  if (p === 'gif/search' && m === 'GET') return gifSearch(env, url, env.ctx);
+  if (p === 'gif/media' && m === 'GET') return gifMedia(url);
 
   if (a === 'users' && b === 'search' && m === 'GET') return searchUsers(env, user, url);
 

@@ -597,3 +597,46 @@ mark { background: #ffe25c; color: inherit; border-radius: 2px; }
 .msg .text.big-emo .emo.anim { height: 52px; vertical-align: middle; }
 .emo-grid button img { height: 24px; width: auto; max-width: 28px; object-fit: contain; }
 .toast .emo.anim { height: 16px; }
+
+/* Kiezer: emoji, GIF's en stickers */
+.picker { width: 330px; height: 320px; display: flex; flex-direction: column; padding: 0 !important; overflow: hidden; }
+.pk-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.pk-tabs { display: flex; border-top: 1px solid #d5dfe5; flex: none; }
+.pk-tabs button { flex: 1; height: 30px; border: 0; background: none; color: #46606f; font: inherit; cursor: pointer; }
+.pk-tabs button.on { color: #0b6fa0; font-weight: 600; box-shadow: inset 0 2px #0896d2; }
+.pk-top { position: sticky; top: 0; z-index: 1; padding: 6px; background: inherit; }
+.picker .pk-top { background: #fff; }
+.pk-search { width: 100%; height: 26px; border: 1px solid #b7c9d6; border-radius: 3px; padding: 0 8px; font: inherit; }
+.gif-grid { columns: 2; column-gap: 4px; padding: 0 6px; }
+.gif-cell { display: block; width: 100%; margin: 0 0 4px; padding: 0; border: 0; border-radius: 6px; overflow: hidden; background: rgba(127, 140, 160, .15); cursor: pointer; break-inside: avoid; }
+.gif-cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pk-note { padding: 10px; color: var(--muted); text-align: center; font-size: 12px; }
+.pk-credit { padding: 4px 0 8px; text-align: center; font-size: 10px; color: var(--muted); letter-spacing: .04em; }
+.sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; }
+.sticker-cell, .sticker-new { aspect-ratio: 1; padding: 4px; border: 0; border-radius: 10px; background: none; cursor: pointer; }
+.sticker-cell:hover, .sticker-new:hover { background: rgba(127, 140, 160, .15); }
+.sticker-cell img { width: 100%; height: 100%; object-fit: contain; -webkit-touch-callout: none; user-select: none; }
+.sticker-new { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed rgba(127, 140, 160, .45); color: var(--muted); font-size: 12px; }
+.sticker-new svg { width: 22px; height: 22px; fill: currentColor; }
+
+/* GIF's en stickers in het gesprek: zonder ballon */
+.msg.bare .text { background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+.att-sticker img.sticker { display: block; width: 150px; height: 150px; object-fit: contain; -webkit-touch-callout: none; }
+.gif-box { position: relative; display: inline-block; line-height: 0; }
+.gif-box video.gif { display: block; max-width: 100%; border-radius: 12px; background: rgba(127, 140, 160, .15); cursor: pointer; }
+.gif-badge { position: absolute; left: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 10px; font-weight: 700; line-height: 14px; }
+
+/* Stickermaker */
+.sm { display: grid; gap: 10px; width: min(420px, 100%); }
+.sm-stage { display: grid; place-items: center; }
+.sm-canvas {
+  width: min(320px, 100%); aspect-ratio: 1; border-radius: 12px; touch-action: none; cursor: grab;
+  background: repeating-conic-gradient(#e6e9ec 0 25%, #fff 0 50%) 0 0 / 20px 20px;
+}
+.sm-seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.sm-seg button { flex: 1; min-height: 30px; padding: 4px 8px; border: 1px solid #b7c9d6; border-radius: 15px; background: #fff; color: inherit; font: inherit; cursor: pointer; }
+.sm-seg button.on { border-color: #0896d2; background: #0896d2; color: #fff; }
+.sm-row { display: flex; align-items: center; gap: 8px; }
+.sm-row input[type="range"] { flex: 1; }
+.sm-row[hidden] { display: none; }
+.sm-hint { margin: 0; font-size: 12px; }

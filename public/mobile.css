@@ -389,3 +389,18 @@
     display: grid; place-items: center; font-size: 14px; color: #fff; background: var(--m-blue); animation: glass-in .15s ease-out;
   }
 }
+
+/* Kiezer op de telefoon: breed en hoger, tabbladen als pillen onderaan */
+@media (max-width: 720px) {
+  .picker { width: calc(100vw - 24px); max-width: 420px; height: min(420px, 55vh); padding: 0 !important; }
+  .picker .emo-grid { padding: 8px; }
+  .pk-tabs { gap: 6px; padding: 6px 8px 8px; border-top: 0; }
+  .pk-tabs button { height: 34px; border-radius: 17px; font-weight: 600; color: inherit; opacity: .7; }
+  .pk-tabs button.on { opacity: 1; box-shadow: none; background: rgba(127, 140, 160, .2); color: var(--m-blue); }
+  .picker .pk-top { background: transparent; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); padding: 8px; }
+  .pk-search { height: 38px; border: 0; border-radius: 19px; padding: 0 14px; font-size: 16px; background: rgba(127, 140, 160, .16); color: inherit; }
+  html[data-mode="dark"] .sm-canvas { background: repeating-conic-gradient(#2b3036 0 25%, #1c2024 0 50%) 0 0 / 20px 20px; }
+  .sm-seg button { min-height: 38px; border: 0; background: rgba(127, 140, 160, .16); font-weight: 600; }
+  .sm-seg button.on { background: var(--m-blue); }
+  .msg.bare .meta { background: rgba(0, 0, 0, .45); color: #fff; padding: 1px 6px; border-radius: 9px; }
+}

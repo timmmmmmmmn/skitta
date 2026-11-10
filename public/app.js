@@ -1200,6 +1200,8 @@ function previewText(m) {
     const meta = attachMeta(m);
     if (meta.t === 'video') return '🎬 Video';
     if (meta.t === 'voice') return `🎤 Spraakbericht${meta.dur ? ` (${duration(meta.dur)})` : ''}`;
+    if (meta.t === 'gif') return 'GIF';
+    if (meta.t === 'sticker') return '✨ Sticker';
     if (meta.t === 'file') return `📎 ${meta.name || 'Bestand'}`;
     return meta.cap ? `📷 ${meta.cap}` : '📷 Foto';
   }
@@ -1917,6 +1919,7 @@ function messageRow(m, first, conv) {
     cls.push('gone');
     text = h('div', { class: 'text', title: 'Dit bericht komt binnen zodra iemand in het gesprek online is die de sleutel heeft' }, '🔒 Dit bericht kan nog niet worden ontsleuteld.');
   } else if (m.k === 'photo') {
+    if (['gif', 'sticker'].includes(attachMeta(m)?.t)) cls.push('bare');
     text = h('div', { class: 'text' }, attachmentView(m));
   } else {
     text = h('div', { class: `text ${onlyEmoji(m.b) ? 'big-emo' : ''}` }, richText(m.b), m.ed ? h('span', { class: 'edited', title: `Bewerkt om ${time(m.ed)}` }, '(bewerkt)') : null);
@@ -2179,10 +2182,15 @@ function composeView(conv) {
         h('button', { class: 'm-only m-emo', title: 'Emoticons', onclick: (e) => emoticonMenu(e.currentTarget, ta) }, smileyIcon()),
         ta),
       h('button', { class: 'sbtn blue d-only', onclick: sendFromCompose, title: 'Verzenden (Enter)' }, S.editing ? 'Opslaan' : 'Verzenden'),
-      h('button', { class: 'm-only m-send', id: 'm-send', title: 'Verzenden', onclick: () => {
+      // Knop pakt geen focus: anders zakt het toetsenbord bij elk bericht even weg en komt het terug.
+      h('button', { class: 'm-only m-send', id: 'm-send', title: 'Verzenden', onpointerdown: keepFocus, onmousedown: keepFocus, onclick: () => {
         if ($('#compose-text').value.trim() || S.editing) sendFromCompose();
         else Voice.start(conv.id);
       } }, svg('mic'))));
+}
+
+function keepFocus(e) {
+  if (document.activeElement?.id === 'compose-text') e.preventDefault();
 }
 
 function smileyIcon() {
@@ -2337,6 +2345,7 @@ async function sendFromCompose() {
   }
   ta.value = '';
   autoGrow(ta);
+  sendIcon();
   clearTimeout(typingStop);
   typingSent = 0;
   Live.send({ t: 'typing', c: conv.id, on: false });
@@ -2525,6 +2534,10 @@ async function sendFile(convId, file, extra = {}, existing) {
     } else if (file.size > (S.me.big_files ? 1024 ** 3 : MAX_FILE)) {
       throw new Error(S.me.big_files ? 'Bestanden mogen maximaal 1 GB zijn' : 'Bestanden mogen maximaal 5 MB zijn');
     }
+    if (kind === 'gif' || kind === 'sticker') {
+      w = extra.w || 0;
+      hgt = extra.h || 0;
+    }
     meta.size = blob.size;
     local.w = w;
     local.h = hgt;
@@ -2632,6 +2645,8 @@ async function videoThumb(file) {
   return null;
 }
 
+const gifBoxes = new Map();
+
 function attachmentView(m) {
   const meta = attachMeta(m) || { t: 'photo' };
   const wrap = h('div', { class: `att att-${meta.t}` });
@@ -2671,6 +2686,31 @@ function attachmentView(m) {
     wrap.append(box);
   } else if (meta.t === 'voice') {
     wrap.append(voicePlayer(getUrl, meta.dur));
+  } else if (meta.t === 'gif' && gifBoxes.has(m.media || m.cid)) {
+    // Bij opnieuw tekenen dezelfde video hergebruiken: die speelt dan gewoon door, zonder knipperen.
+    wrap.append(gifBoxes.get(m.media || m.cid));
+  } else if (meta.t === 'gif') {
+    // Speelt vanzelf en zonder geluid in een lus, zoals in Signal. Tik = pauzeren/verder.
+    // Lege poster: anders toont de Android-webweergave even een grijze afspeelknop bij het verversen.
+    const v = h('video', { class: 'gif', muted: true, loop: true, autoplay: true, playsinline: true, disablepictureinpicture: true, poster: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' });
+    v.muted = true;
+    v.onclick = () => (v.paused ? v.play() : v.pause());
+    const w = m.w || meta.w || 200;
+    const hh = m.h || meta.h || 200;
+    const scale = Math.min(260 / w, 260 / hh, 1.6);
+    v.style.width = `${Math.round(w * scale)}px`;
+    v.style.aspectRatio = `${w} / ${hh}`;
+    getUrl().then((u) => { if (u) { v.src = u; v.play().catch(() => {}); } });
+    const gbox = h('div', { class: 'gif-box' }, v, h('span', { class: 'gif-badge' }, 'GIF'));
+    if (m.media || m.cid) {
+      gifBoxes.set(m.media || m.cid, gbox);
+      if (gifBoxes.size > 60) gifBoxes.delete(gifBoxes.keys().next().value);
+    }
+    wrap.append(gbox);
+  } else if (meta.t === 'sticker') {
+    const img = h('img', { class: 'sticker', alt: 'Sticker' });
+    getUrl().then((u) => { if (u) img.src = u; else img.alt = 'Sticker kon niet worden geladen'; });
+    wrap.append(img);
   } else {
     const link = h('a', { class: 'att-file', href: '#', onclick: async (e) => {
       e.preventDefault();
@@ -2968,6 +3008,8 @@ function messageMenu(m, conv, x, y) {
     !gone && m.k === 'text' && !m.locked && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, '')) },
     !gone && !conv.left && m.k !== 'call' && { label: 'Citeren', icon: 'quote', run: () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); } },
     !gone && m.k === 'photo' && ['photo', 'video'].includes(attachMeta(m)?.t) && { label: attachMeta(m).t === 'video' ? 'Video afspelen' : 'Foto openen', icon: 'photo', run: () => Gallery.open(m) },
+    !gone && m.k === 'photo' && attachMeta(m)?.t === 'photo' && { label: 'Sticker maken…', icon: 'smile', run: () => stickerFromMessage(m) },
+    !gone && m.k === 'photo' && attachMeta(m)?.t === 'sticker' && { label: 'Bewaren bij mijn stickers', icon: 'smile', run: () => saveStickerFrom(m) },
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
@@ -2991,6 +3033,8 @@ function messageSheet(m, conv, reactItems) {
       }, emo))) : null,
       !gone && !conv.left && m.k !== 'call' ? act('Beantwoorden', () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); }) : null,
       !gone && m.k === 'text' ? act('Kopiëren', () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, ''))) : null,
+      !gone && attachMeta(m)?.t === 'photo' ? act('Sticker maken', () => stickerFromMessage(m)) : null,
+      !gone && attachMeta(m)?.t === 'sticker' ? act('Bewaren bij mijn stickers', () => saveStickerFrom(m)) : null,
       !gone && m.k !== 'call' ? act('Doorsturen', () => forwardDialog(m)) : null,
       mine && !gone && m.k === 'text' && Date.now() - m.at < 24 * 3600e3 ? act('Bewerken', () => startEdit(m)) : null,
       mine && !gone && m.k !== 'call' ? act('Verwijderen voor iedereen', () => deleteMsg(m)) : null,
@@ -3009,13 +3053,46 @@ async function deleteMsg(m) {
   }
 }
 
+// Kiezer onder de smiley: emoji, GIF's (GIPHY) en je eigen stickers, met tabbladen onderaan zoals Signal.
 function emoticonMenu(anchor, ta) {
   closeMenus();
+  const convId = S.cur;
+  let tab = 'emoji';
+  try { tab = localStorage.getItem('skitta-picker') || 'emoji'; } catch {}
+  const body = h('div', { class: 'pk-body' });
+  const tabs = h('div', { class: 'pk-tabs' });
+  const pop = h('div', { class: 'menu emo-pop picker' }, body, tabs);
+  const show = (name) => {
+    tab = name;
+    try { localStorage.setItem('skitta-picker', name); } catch {}
+    for (const b of tabs.children) b.classList.toggle('on', b.dataset.tab === name);
+    body.replaceChildren();
+    body.scrollTop = 0;
+    if (name === 'gif') gifPane(body, convId);
+    else if (name === 'stickers') stickerPane(body, convId);
+    else body.append(emojiGrid(ta));
+  };
+  for (const [name, label] of [['emoji', 'Emoji'], ['gif', 'GIF'], ['stickers', 'Stickers']]) {
+    tabs.append(h('button', { type: 'button', 'data-tab': name, onclick: () => show(name) }, label));
+  }
+  if (!mobile()) pop.style.background = '#fff';
+  $('#layer').append(pop);
+  show(tab);
+  const r = anchor.getBoundingClientRect();
+  const pr = { width: pop.offsetWidth, height: pop.offsetHeight };
+  const pad = mobile() ? 12 : 4;
+  pop.style.left = `${Math.max(pad, Math.min(r.left, innerWidth - pr.width - pad))}px`;
+  pop.style.top = `${Math.max(pad, r.top - pr.height - 8)}px`;
+  setTimeout(() => document.addEventListener('pointerdown', outsideMenu, true), 0);
+}
+
+function emojiGrid(ta) {
   const animated = ANIMATED.filter(([file]) => file !== 'finger').map(([file, emojis, codes]) => [codes[0] || EMOTICONS.find(([, e]) => e === emojis[0])?.[0] || emojis[0], emojis[0], file]);
   const rest = EMOTICONS.filter(([, e]) => !animFor(e)).map(([c, e]) => [c, e, null]);
-  const pop = h('div', { class: 'menu emo-pop' }, h('div', { class: 'emo-grid' }, [...animated, ...rest].map(([code, emo, file]) =>
+  return h('div', { class: 'emo-grid' }, [...animated, ...rest].map(([code, emo, file]) =>
     h('button', {
       title: code,
+      onpointerdown: keepFocus,
       onclick: () => {
         const start = ta.selectionStart;
         const before = ta.value.slice(0, start);
@@ -3025,18 +3102,339 @@ function emoticonMenu(anchor, ta) {
         closeMenus();
         sendIcon();
       }
-    }, file ? h('img', { src: `/emoji/${file}.gif`, alt: emo, loading: 'lazy' }) : emo))));
-  if (!mobile()) {
-    pop.style.padding = '2px';
-    pop.style.background = '#fff';
+    }, file ? h('img', { src: `/emoji/${file}.gif`, alt: emo, loading: 'lazy' }) : emo)));
+}
+
+// ---------- GIF's ----------
+
+function gifPane(body, convId) {
+  const input = h('input', { class: 'pk-search', type: 'search', placeholder: 'Zoek GIF\'s', enterkeyhint: 'search' });
+  const grid = h('div', { class: 'gif-grid' });
+  const note = h('div', { class: 'pk-note' });
+  body.append(h('div', { class: 'pk-top' }, input), grid, note, h('div', { class: 'pk-credit' }, 'Powered by GIPHY'));
+  let q = '';
+  let next = 0;
+  let busy = false;
+  let done = false;
+  let gen = 0;
+  const load = async (reset) => {
+    if (busy && !reset) return;
+    if (reset) { gen++; next = 0; done = false; grid.replaceChildren(); }
+    if (done) return;
+    const mine = gen;
+    busy = true;
+    note.textContent = 'Laden…';
+    try {
+      const r = await api('GET', `gif/search?q=${encodeURIComponent(q)}&offset=${next}`);
+      if (mine !== gen) return;
+      next = r.next;
+      done = !r.gifs.length;
+      for (const g of r.gifs) {
+        grid.append(h('button', { class: 'gif-cell', type: 'button', title: g.title, style: { aspectRatio: `${g.w} / ${g.h}` }, onclick: () => { closeMenus(); sendGif(convId, g); } },
+          h('img', { src: g.preview, alt: g.title, loading: 'lazy' })));
+      }
+      note.textContent = grid.children.length ? '' : q ? 'Niets gevonden.' : '';
+    } catch (e) {
+      if (mine === gen) note.textContent = e.message;
+    } finally {
+      if (mine === gen) busy = false;
+    }
+  };
+  let t;
+  input.oninput = () => { clearTimeout(t); t = setTimeout(() => { q = input.value.trim(); load(true); }, 350); };
+  body.onscroll = () => { if (body.scrollHeight - body.scrollTop - body.clientHeight < 200) load(false); };
+  load(true);
+  if (!mobile()) setTimeout(() => input.focus(), 50);
+}
+
+async function sendGif(convId, g) {
+  if (typeof convId !== 'number') return;
+  try {
+    const res = await fetch(g.mp4, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Deze GIF kon niet worden geladen');
+    const blob = await res.blob();
+    await sendFile(convId, new File([blob], 'gif.mp4', { type: 'video/mp4' }), { t: 'gif', w: g.sw, h: g.sh, name: 'GIF' });
+  } catch (e) {
+    toastError(e.message);
   }
-  $('#layer').append(pop);
-  const r = anchor.getBoundingClientRect();
-  const pr = { width: pop.offsetWidth, height: pop.offsetHeight };
-  const pad = mobile() ? 12 : 4;
-  pop.style.left = `${Math.max(pad, Math.min(r.left, innerWidth - pr.width - pad))}px`;
-  pop.style.top = `${Math.max(pad, r.top - pr.height - 8)}px`;
-  setTimeout(() => document.addEventListener('pointerdown', outsideMenu, true), 0);
+}
+
+// ---------- Stickers ----------
+// Je eigen stickers staan op dit apparaat (IndexedDB, bij de sleutels). Versturen gaat als gewone,
+// versleutelde bijlage; de ontvanger kan een sticker met één tik bij de eigen stickers zetten.
+
+const Stickers = {
+  key: () => `stickers${S.me.id}`,
+  async list() {
+    return (await KeyStore.run('readonly', (st) => st.get(this.key())).catch(() => null)) || [];
+  },
+  async save(list) {
+    await KeyStore.run('readwrite', (st) => st.put(list, this.key()));
+  },
+  async add(blob) {
+    const list = await this.list();
+    list.unshift({ id: uid(), blob, at: Date.now() });
+    await this.save(list.slice(0, 200));
+  },
+  async remove(id) {
+    await this.save((await this.list()).filter((x) => x.id !== id));
+  }
+};
+
+async function stickerPane(body, convId) {
+  const grid = h('div', { class: 'sticker-grid' });
+  const pickFile = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: () => { const f = pickFile.files[0]; if (f) { closeMenus(); stickerMaker(f, convId); } } });
+  grid.append(h('button', { class: 'sticker-new', type: 'button', title: 'Sticker maken van een plaatje', onclick: () => pickFile.click() }, svg('plus'), h('span', null, 'Nieuw')));
+  body.append(grid, pickFile);
+  const list = await Stickers.list();
+  for (const st of list) {
+    const url = URL.createObjectURL(st.blob);
+    const cell = h('button', { class: 'sticker-cell', type: 'button', onclick: () => { closeMenus(); sendSticker(convId, st.blob); } }, h('img', { src: url, alt: 'Sticker' }));
+    const remove = async () => {
+      if (!(await confirmDialog('Sticker verwijderen', 'Deze sticker uit je stickers halen?', 'Verwijderen'))) return;
+      await Stickers.remove(st.id);
+      cell.remove();
+    };
+    cell.addEventListener('contextmenu', (e) => { e.preventDefault(); remove(); });
+    let press;
+    cell.addEventListener('touchstart', () => { press = setTimeout(() => { press = 'done'; remove(); }, 600); }, { passive: true });
+    cell.addEventListener('touchend', (e) => { if (press === 'done') e.preventDefault(); clearTimeout(press); });
+    cell.addEventListener('touchmove', () => clearTimeout(press), { passive: true });
+    grid.append(cell);
+  }
+  if (!list.length) body.append(h('div', { class: 'pk-note' }, 'Maak een sticker van een foto of plaatje met Nieuw. Ontvangen stickers kun je ook bewaren: houd ze ingedrukt.'));
+}
+
+async function sendSticker(convId, blob) {
+  if (typeof convId !== 'number') return;
+  const type = blob.type || 'image/webp';
+  await sendFile(convId, new File([blob], type === 'image/png' ? 'sticker.png' : 'sticker.webp', { type }), { t: 'sticker', w: 512, h: 512, name: 'Sticker' });
+}
+
+async function saveStickerFrom(m) {
+  try {
+    const u = await mediaUrl(m, attachMeta(m));
+    if (!u) throw new Error('Deze sticker kon niet worden geladen');
+    await Stickers.add(await (await fetch(u)).blob());
+    toast({ title: 'Skitta', text: 'Bewaard bij je stickers', plain: true, ms: 2500 });
+  } catch (e) {
+    toastError(e.message);
+  }
+}
+
+async function stickerFromMessage(m) {
+  try {
+    const u = await mediaUrl(m, attachMeta(m));
+    if (!u) throw new Error('Deze foto kon niet worden geladen');
+    stickerMaker(await (await fetch(u)).blob(), S.cur);
+  } catch (e) {
+    toastError(e.message);
+  }
+}
+
+// De stickermaker: uitsnijden (slepen en zoomen), vorm kiezen, achtergrond weggummen door erop te tikken
+// (alles met ongeveer dezelfde kleur verdwijnt) en eventueel tekst eronder. Uitkomst: 512×512 met doorzichtige achtergrond.
+async function stickerMaker(file, convId) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file);
+  } catch {
+    return toastError('Dit plaatje kan niet worden geopend');
+  }
+  const SIZE = 512;
+  // Werkkopie van het plaatje (hooguit 1024 px), daarop wordt gegumd.
+  const ws = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+  const work = h('canvas', { width: Math.round(bmp.width * ws), height: Math.round(bmp.height * ws) });
+  const wctx = work.getContext('2d', { willReadFrequently: true });
+  wctx.drawImage(bmp, 0, 0, work.width, work.height);
+  bmp.close?.();
+  const view = h('canvas', { class: 'sm-canvas', width: SIZE, height: SIZE });
+  const vctx = view.getContext('2d');
+  const st = { zoom: 1, x: 0, y: 0, shape: 'none', mode: 'move', tol: 40, text: '' };
+  const fit = SIZE / Math.max(work.width, work.height);
+  const undo = [];
+  const scaleNow = () => fit * st.zoom;
+
+  const shapePath = (ctx) => {
+    ctx.beginPath();
+    if (st.shape === 'round') ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 4, 0, Math.PI * 2);
+    else if (st.shape === 'rounded') ctx.roundRect(8, 8, SIZE - 16, SIZE - 16, 80);
+    else ctx.rect(0, 0, SIZE, SIZE);
+  };
+  const paint = (ctx) => {
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.save();
+    shapePath(ctx);
+    ctx.clip();
+    const sc = scaleNow();
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(work, SIZE / 2 + st.x - (work.width * sc) / 2, SIZE / 2 + st.y - (work.height * sc) / 2, work.width * sc, work.height * sc);
+    ctx.restore();
+    if (st.shape !== 'none') {
+      // Witte rand, zoals bij echte stickers.
+      ctx.save();
+      shapePath(ctx);
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (st.text) {
+      ctx.save();
+      let fs = 64;
+      ctx.font = `900 ${fs}px system-ui, sans-serif`;
+      while (ctx.measureText(st.text).width > SIZE - 40 && fs > 24) { fs -= 4; ctx.font = `900 ${fs}px system-ui, sans-serif`; }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = fs / 6;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#fff';
+      ctx.strokeText(st.text, SIZE / 2, SIZE - 22);
+      ctx.fillText(st.text, SIZE / 2, SIZE - 22);
+      ctx.restore();
+    }
+  };
+  const draw = () => paint(vctx);
+
+  // Tik met de gum: alle aaneengesloten pixels met ongeveer de kleur van het aangetikte punt worden doorzichtig.
+  const erase = (cx, cy) => {
+    const sc = scaleNow();
+    const ix = Math.floor((cx - SIZE / 2 - st.x) / sc + work.width / 2);
+    const iy = Math.floor((cy - SIZE / 2 - st.y) / sc + work.height / 2);
+    if (ix < 0 || iy < 0 || ix >= work.width || iy >= work.height) return;
+    const img = wctx.getImageData(0, 0, work.width, work.height);
+    const d = img.data;
+    const W = work.width;
+    const H = work.height;
+    const at = (iy * W + ix) * 4;
+    if (d[at + 3] === 0) return;
+    undo.push(wctx.getImageData(0, 0, W, H));
+    if (undo.length > 8) undo.shift();
+    const [r0, g0, b0] = [d[at], d[at + 1], d[at + 2]];
+    const tol = st.tol * st.tol * 3;
+    const seen = new Uint8Array(W * H);
+    const stack = [iy * W + ix];
+    seen[iy * W + ix] = 1;
+    while (stack.length) {
+      const p = stack.pop();
+      const o = p * 4;
+      const dr = d[o] - r0, dg = d[o + 1] - g0, db = d[o + 2] - b0;
+      if (d[o + 3] !== 0 && dr * dr + dg * dg + db * db > tol) continue;
+      d[o + 3] = 0;
+      const x = p % W;
+      const y = (p - x) / W;
+      if (x > 0 && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+      if (x < W - 1 && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && !seen[p - W]) { seen[p - W] = 1; stack.push(p - W); }
+      if (y < H - 1 && !seen[p + W]) { seen[p + W] = 1; stack.push(p + W); }
+    }
+    // Zachte rand: half doorzichtige pixels naast gewiste pixels.
+    for (let p = 0; p < W * H; p++) {
+      const o = p * 4;
+      if (d[o + 3] === 0) continue;
+      const x = p % W;
+      if ((x > 0 && d[o - 1] === 0) || (x < W - 1 && d[o + 7] === 0) || (p >= W && d[o - W * 4 + 3] === 0) || (p < W * (H - 1) && d[o + W * 4 + 3] === 0)) d[o + 3] = Math.min(d[o + 3], 140);
+    }
+    wctx.putImageData(img, 0, 0);
+    draw();
+  };
+
+  // Slepen = verschuiven, twee vingers = zoomen; met de gum is een tik weggummen.
+  const pts = new Map();
+  let startDist = 0;
+  let startZoom = 1;
+  let moved = 0;
+  const toCanvas = (e) => {
+    const r = view.getBoundingClientRect();
+    return [(e.clientX - r.left) * (SIZE / r.width), (e.clientY - r.top) * (SIZE / r.height)];
+  };
+  view.onpointerdown = (e) => {
+    view.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    moved = 0;
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      startDist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      startZoom = st.zoom;
+    }
+  };
+  view.onpointermove = (e) => {
+    const prev = pts.get(e.pointerId);
+    if (!prev) return;
+    const r = view.getBoundingClientRect();
+    const k = SIZE / r.width;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      st.zoom = Math.max(0.3, Math.min(6, startZoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / (startDist || 1)));
+      zoom.value = st.zoom;
+      moved += 10;
+      draw();
+      return;
+    }
+    const dx = (e.clientX - prev[0]) * k;
+    const dy = (e.clientY - prev[1]) * k;
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (st.mode === 'move') {
+      st.x += dx;
+      st.y += dy;
+      draw();
+    }
+  };
+  view.onpointerup = view.onpointercancel = (e) => {
+    const single = pts.size === 1;
+    pts.delete(e.pointerId);
+    if (st.mode === 'erase' && single && moved < 12 && e.type === 'pointerup') erase(...toCanvas(e));
+  };
+  view.onwheel = (e) => {
+    e.preventDefault();
+    st.zoom = Math.max(0.3, Math.min(6, st.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+    zoom.value = st.zoom;
+    draw();
+  };
+
+  const zoom = h('input', { type: 'range', min: 0.3, max: 6, step: 0.01, value: 1, oninput: () => { st.zoom = Number(zoom.value); draw(); } });
+  const tol = h('input', { type: 'range', min: 5, max: 120, step: 1, value: st.tol, oninput: () => { st.tol = Number(tol.value); } });
+  const seg = (items, key, after) => {
+    const box = h('div', { class: 'sm-seg' });
+    for (const [val, label] of items) {
+      box.append(h('button', { type: 'button', class: st[key] === val ? 'on' : '', onclick: (e) => {
+        st[key] = val;
+        for (const b of box.children) b.classList.toggle('on', b === e.currentTarget);
+        after?.();
+        draw();
+      } }, label));
+    }
+    return box;
+  };
+  const eraseRow = h('div', { class: 'sm-row', hidden: true }, h('span', null, 'Gevoeligheid'), tol,
+    h('button', { type: 'button', class: 'btn', onclick: () => { const last = undo.pop(); if (last) { wctx.putImageData(last, 0, 0); draw(); } } }, 'Ongedaan'));
+  const text = h('input', { class: 'field', maxlength: 30, placeholder: 'Tekst op de sticker (mag leeg)', oninput: () => { st.text = text.value.trim(); draw(); } });
+  draw();
+
+  const body = h('div', { class: 'sm' },
+    h('div', { class: 'sm-stage' }, view),
+    seg([['move', '✋ Verschuiven'], ['erase', '🧽 Achtergrond weggummen']], 'mode', () => { eraseRow.hidden = st.mode !== 'erase'; }),
+    eraseRow,
+    h('div', { class: 'sm-row' }, h('span', null, 'Zoom'), zoom),
+    seg([['none', 'Vrij'], ['rounded', 'Afgerond'], ['round', 'Rond']], 'shape'),
+    text,
+    h('p', { class: 'muted sm-hint' }, 'Sleep om te verschuiven, knijp of scroll om te zoomen. Met de gum tik je op de achtergrond om die weg te halen.'));
+
+  const out = h('canvas', { width: SIZE, height: SIZE });
+  const result = await dialog('Sticker maken', body, [
+    { label: typeof convId === 'number' ? 'Versturen' : 'Bewaren', default: true, value: 'send' },
+    typeof convId === 'number' && { label: 'Bewaren', value: 'save' },
+    { label: 'Annuleren', value: null }
+  ]);
+  if (!result) return;
+  paint(out.getContext('2d'));
+  let blob = await new Promise((res) => out.toBlob(res, 'image/webp', 0.9));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((res) => out.toBlob(res, 'image/png'));
+  await Stickers.add(blob);
+  if (result === 'send' && typeof convId === 'number') sendSticker(convId, blob);
+  else toast({ title: 'Skitta', text: 'Bewaard bij je stickers', plain: true, ms: 2500 });
 }
 
 // ---------- Menubalk ----------
@@ -3369,7 +3767,7 @@ function dialog(title, body, buttons, opts = {}) {
     let overlay;
     const close = (v) => { overlay.remove(); resolve(v); };
     const foot = h('div', { class: 'dfoot' });
-    for (const b of buttons) {
+    for (const b of buttons.filter(Boolean)) {
       if (b.left) {
         foot.querySelector('.left') || foot.prepend(h('div', { class: 'left' }));
         foot.querySelector('.left').append(h('button', { class: 'btn', type: 'button', onclick: () => b.run(close) }, b.label));
