@@ -8,6 +8,10 @@ binding = "ASSETS"
 # De Worker eerst, zodat http:// altijd naar https:// gaat (anders verdwijnt het inlogcookie).
 run_worker_first = true
 
+# Grote bijlagen (> 5 MB) op de eigen bestandsserver (server/), via een Cloudflare Tunnel.
+[vars]
+FILES_URL = "https://bestanden.timvanbergen.nl"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "skitta-db"
