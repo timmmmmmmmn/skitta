@@ -413,7 +413,8 @@ object Meldingen {
     fun clearConv(context: Context, c: Long) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(c.toInt())
-        val left = nm.activeNotifications.count { it.id != 1 && it.id != SUMMARY_ID && it.id != CALL_ID }
+        // activeNotifications kan de net weggehaalde melding nog bevatten: die tellen we niet mee.
+        val left = nm.activeNotifications.count { it.notification.group == GROUP && it.id != c.toInt() && it.id != SUMMARY_ID }
         if (left == 0) nm.cancel(SUMMARY_ID)
     }
 

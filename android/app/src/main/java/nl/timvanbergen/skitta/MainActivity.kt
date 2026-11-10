@@ -36,6 +36,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import nl.timvanbergen.skitta.glass.GlassBar
@@ -214,16 +215,28 @@ class MainActivity : ComponentActivity() {
         bars.isAppearanceLightStatusBars = true
         bars.isAppearanceLightNavigationBars = true
 
+        // Het toetsenbord: de webweergave krimpt beeldje voor beeldje mee terwijl het toetsenbord
+        // omhoog of omlaag schuift (zoals in Signal), in plaats van in één keer te verspringen.
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            val density = resources.displayMetrics.density
-            view.setPadding(sys.left, 0, sys.right, ime.bottom)
-            insetTop = sys.top / density
-            insetBottom = if (ime.bottom > 0) 0f else sys.bottom / density
-            pushInsets()
+            if (!imeAnimating) applyInsets(view, insets)
             WindowInsetsCompat.CONSUMED
         }
+        ViewCompat.setWindowInsetsAnimationCallback(root, object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_STOP) {
+            override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) imeAnimating = true
+            }
+
+            override fun onProgress(insets: WindowInsetsCompat, running: MutableList<WindowInsetsAnimationCompat>): WindowInsetsCompat {
+                if (imeAnimating) applyInsets(root, insets)
+                return insets
+            }
+
+            override fun onEnd(animation: WindowInsetsAnimationCompat) {
+                if (animation.typeMask and WindowInsetsCompat.Type.ime() == 0) return
+                imeAnimating = false
+                ViewCompat.getRootWindowInsets(root)?.let { applyInsets(root, it) }
+            }
+        })
 
         CookieManager.getInstance().setAcceptCookie(true)
         web.setBackgroundColor(Color.WHITE)
@@ -276,6 +289,26 @@ class MainActivity : ComponentActivity() {
         if (bytes.size > 40 * 1024 * 1024) return
         val data = Base64.encodeToString(bytes, Base64.NO_WRAP)
         web.evaluateJavascript("window.skittaPasteImage && skittaPasteImage(${JSONObject.quote(data)}, ${JSONObject.quote(mime)})", null)
+    }
+
+    private var imeAnimating = false
+
+    private fun applyInsets(view: View, insets: WindowInsetsCompat) {
+        val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        val density = resources.displayMetrics.density
+        // Zolang het toetsenbord lager is dan de navigatiebalk, houdt de pagina zelf die ruimte vrij.
+        val pad = if (ime > sys.bottom) ime else 0
+        val top = sys.top / density
+        val bottom = if (ime > sys.bottom) 0f else (sys.bottom - ime) / density
+        if (view.paddingBottom != pad || view.paddingLeft != sys.left || view.paddingRight != sys.right) {
+            view.setPadding(sys.left, 0, sys.right, pad)
+        }
+        if (top != insetTop || bottom != insetBottom) {
+            insetTop = top
+            insetBottom = bottom
+            pushInsets()
+        }
     }
 
     private fun pushInsets() {
@@ -388,6 +421,8 @@ class MainActivity : ComponentActivity() {
             .filter { it.id >= 2_000_000 }.forEach { (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(it.id) }
         Updater.resume(this)
         Updater.checkQuietly(this)
+        // Het gesprek dat open staat is nu gelezen; dan verdwijnt ook de melding ervan.
+        if (pageReady) web.evaluateJavascript("window.skittaResume && skittaResume()", null)
     }
 
     override fun onPause() {

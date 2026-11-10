@@ -1150,7 +1150,7 @@ async function onMessage(m) {
   if (isNew && m.k === 'call') { S.calls = null; if (S.tab === 'calls') loadCalls(); }
   if (isNew && m.u !== S.me.id && m.k !== 'system') {
     stopTyping(m.c, m.u);
-    const visible = S.cur === m.c && document.visibilityState === 'visible' && document.hasFocus();
+    const visible = convVisible(m.c);
     if (visible) markRead(m.c, m.id);
     else {
       conv.unread = (conv.unread || 0) + 1;
@@ -1382,6 +1382,38 @@ function onRead(e) {
 }
 
 let readTimer = null;
+// Kijkt de gebruiker nu echt naar dit gesprek? (In de app telt of de app in beeld is; hasFocus is
+// in een WebView na terugkeren niet betrouwbaar. Op de telefoon moet het gesprek zelf open zijn.)
+function convVisible(c) {
+  if (S.cur !== c || document.visibilityState !== 'visible') return false;
+  if (mobile() && !$('#app').classList.contains('show-pane')) return false;
+  if (Native.api?.inFront) { try { return Native.api.inFront(); } catch {} }
+  return document.hasFocus();
+}
+
+// Terug in beeld (de app roept dit ook zelf aan): het open gesprek is nu gelezen.
+function readVisible() {
+  if (typeof S.cur !== 'number' || !convVisible(S.cur)) return;
+  const last = S.convs.get(S.cur)?.last;
+  if (last?.id) markRead(S.cur, last.id);
+}
+window.skittaResume = () => { readVisible(); if (S.me) renderList(); return true; };
+
+// Wordt het gesprek kleiner (toetsenbord komt op, invoerveld groeit), dan blijft de onderkant staan:
+// de laatste berichten schuiven mee omhoog in plaats van achter het toetsenbord te verdwijnen.
+function stickyChat(chat) {
+  let fromBottom = 0;
+  let lastHeight = 0;
+  chat.addEventListener('scroll', () => {
+    if (chat.clientHeight === lastHeight) fromBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight;
+  }, { passive: true });
+  new ResizeObserver(() => {
+    if (chat.clientHeight !== lastHeight && lastHeight) chat.scrollTop = chat.scrollHeight - chat.clientHeight - fromBottom;
+    lastHeight = chat.clientHeight;
+  }).observe(chat);
+  return chat;
+}
+
 function markRead(convId, id) {
   try { Native.api?.clearConv?.(String(convId)); } catch {}
   if (!Native.api && 'serviceWorker' in navigator) {
@@ -1400,8 +1432,7 @@ function markRead(convId, id) {
 
 window.addEventListener('focus', () => {
   if (typeof S.cur !== 'number') return;
-  const last = S.convs.get(S.cur)?.last;
-  if (last?.id) markRead(S.cur, last.id);
+  readVisible();
   renderList();
 });
 
@@ -1608,7 +1639,7 @@ function renderPane() {
     Call.view(conv),
     findBar(conv),
     keyWarning(conv),
-    h('div', { class: 'chat', id: 'chat' }),
+    stickyChat(h('div', { class: 'chat', id: 'chat' })),
     h('div', { class: 'typing', id: 'typing' }),
     composeView(conv)
   ].filter(Boolean));
@@ -4856,8 +4887,7 @@ document.addEventListener('visibilitychange', () => {
     Live.connect();
   }
   if (document.visibilityState === 'visible' && typeof S.cur === 'number') {
-    const last = S.convs.get(S.cur)?.last;
-    if (last?.id && document.hasFocus()) markRead(S.cur, last.id);
+    readVisible();
     renderList();
   }
 });
