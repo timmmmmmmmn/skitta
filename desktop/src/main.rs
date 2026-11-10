@@ -28,7 +28,7 @@ pub enum UserEvent {
     Ipc(String),
     Tray(TrayIconEvent),
     Menu(MenuEvent),
-    Notify { title: String, body: String },
+    Notify { title: String, body: String, call: bool },
 }
 
 // Wat de pagina van de app kan vragen (zelfde vorm als in de Android-app).
@@ -43,7 +43,7 @@ window.SkittaNative = {
 "#;
 
 fn icon_rgba() -> (Vec<u8>, u32, u32) {
-    let decoder = png::Decoder::new(std::io::Cursor::new(include_bytes!("../../public/img/icon-192.png")));
+    let decoder = png::Decoder::new(std::io::Cursor::new(include_bytes!("../../public/img/logo.png")));
     let mut reader = decoder.read_info().expect("icoon");
     let mut buf = vec![0; reader.output_buffer_size().expect("icoon")];
     let info = reader.next_frame(&mut buf).expect("icoon");
@@ -173,6 +173,19 @@ impl App {
     }
 }
 
+// De klassieke geluiden bij meldingen van de achtergrondverbinding (de pagina speelt ze zelf als die leeft).
+const SOUND_IM: &[u8] = include_bytes!("../sounds/IM.wav");
+const SOUND_CALL: &[u8] = include_bytes!("../sounds/CALL_IN.wav");
+
+pub fn play_sound(call: bool) {
+    std::thread::spawn(move || {
+        let Ok(sink) = rodio::DeviceSinkBuilder::open_default_sink() else { return };
+        if let Ok(player) = rodio::play(sink.mixer(), std::io::Cursor::new(if call { SOUND_CALL } else { SOUND_IM })) {
+            player.sleep_until_end();
+        }
+    });
+}
+
 pub fn notify(title: &str, body: &str) {
     let _ = notify_rust::Notification::new()
         .appname("Skitta")
@@ -271,7 +284,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             Event::Reopen { .. } => app.show(),
             Event::UserEvent(UserEvent::Ipc(msg)) => app.handle_ipc(&msg),
-            Event::UserEvent(UserEvent::Notify { title, body }) => notify(&title, &body),
+            Event::UserEvent(UserEvent::Notify { title, body, call }) => {
+                play_sound(call);
+                notify(&title, &body);
+            }
             Event::UserEvent(UserEvent::Tray(TrayIconEvent::Click { button: MouseButton::Left, .. })) => app.show(),
             Event::UserEvent(UserEvent::Tray(TrayIconEvent::DoubleClick { .. })) => app.show(),
             Event::UserEvent(UserEvent::Menu(e)) => match e.id.0.as_str() {

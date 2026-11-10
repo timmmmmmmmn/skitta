@@ -46,6 +46,7 @@ class SkittaService : Service() {
     private val convTitles = ConcurrentHashMap<Long, String>()
     private val seen = LinkedHashSet<Long>()
     private val rings = HashSet<String>()
+    private val ringConv = HashMap<String, Long>()
     private val unread = ConcurrentHashMap<Long, Int>()
     private val mutedUntil = ConcurrentHashMap<Long, Long>()
 
@@ -275,13 +276,16 @@ class SkittaService : Service() {
         val from = e.optLong("from")
         when (d.optString("type")) {
             "ring" -> {
+                ringConv[callId] = d.optLong("conv")
                 if (MainActivity.inFront || !rings.add(callId)) return
                 Thread { Meldingen.call(this, nameOf(from), d.optBoolean("video"), d.optLong("conv")) }.start()
             }
             "cancel", "taken", "hangup" -> {
                 (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(Meldingen.CALL_ID)
                 if (d.optString("type") == "cancel" && !MainActivity.inFront) {
-                    Thread { Meldingen.show(this, Meldingen.CALL_ID + 1, Meldingen.CH_BERICHTEN, nameOf(from), "Gemiste oproep", d.optLong("conv")) }.start()
+                    // Hoort bij het gesprek: verdwijnt samen met de berichten als je het leest.
+                    val conv = ringConv[callId] ?: 0L
+                    Thread { Meldingen.show(this, if (conv != 0L) conv.toInt() else Meldingen.CALL_ID + 1, Meldingen.CH_BERICHTEN, nameOf(from), "Gemiste oproep", conv) }.start()
                 }
             }
         }
@@ -320,8 +324,9 @@ class SkittaService : Service() {
 /** Meldingskanalen en het tonen van meldingen. */
 object Meldingen {
     const val CH_VERBINDING = "verbinding"
-    const val CH_BERICHTEN = "berichten"
-    const val CH_OPROEPEN = "oproepen"
+    // Nieuwe kanalen met de Skitta-geluiden (het geluid van een bestaand kanaal kan Android niet meer wijzigen).
+    const val CH_BERICHTEN = "berichten2"
+    const val CH_OPROEPEN = "oproepen2"
     const val CALL_ID = 999_000
 
     fun channels(context: Context) {
@@ -330,13 +335,20 @@ object Meldingen {
             description = "Houdt Skitta verbonden zodat je berichten en oproepen binnenkrijgt"
             setShowBadge(false)
         })
+        nm.deleteNotificationChannel("berichten")
+        nm.deleteNotificationChannel("oproepen")
+        fun sound(name: String) = android.net.Uri.parse("android.resource://${context.packageName}/raw/$name")
         nm.createNotificationChannel(NotificationChannel(CH_BERICHTEN, "Berichten", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Nieuwe berichten en contactverzoeken"
+            description = "Nieuwe berichten en contactverzoeken (met het klassieke berichtgeluid)"
+            setSound(
+                sound("skitta_bericht"),
+                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            )
         })
         nm.createNotificationChannel(NotificationChannel(CH_OPROEPEN, "Oproepen", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Inkomende gesprekken"
+            description = "Inkomende gesprekken (met de klassieke beltoon)"
             setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                sound("skitta_oproep"),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
             )
             enableVibration(true)
@@ -419,7 +431,7 @@ object Meldingen {
             .setContentIntent(open)
             .setFullScreenIntent(open, true)
             .addAction(Notification.Action.Builder(null, "Opnemen", open).build())
-            .build()
+            .build().apply { flags = flags or Notification.FLAG_INSISTENT }
         runCatching { (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(CALL_ID, n) }
     }
 

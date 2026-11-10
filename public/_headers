@@ -14,3 +14,6 @@
 
 /sw.js
   Cache-Control: no-cache
+
+/emoji/*
+  Cache-Control: public, max-age=2592000, immutable

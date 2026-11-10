@@ -140,10 +140,21 @@ const ICONS = {
   send: 'M2 21l21-9L2 3v7l15 2-15 2z',
   menu: 'M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
   play: 'M8 5v14l11-7z',
+  pause: 'M6 19h4V5H6zm8-14v14h4V5z',
   left: 'M15.4 7.4L14 6l-6 6 6 6 1.4-1.4L10.8 12z',
   right: 'M8.6 16.6L10 18l6-6-6-6-1.4 1.4 4.6 4.6z',
   download: 'M19 9h-4V3H9v6H5l7 7zM5 18v2h14v-2z',
   close: 'M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z',
+  forward: 'M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z',
+  pin: 'M16 9V4h1V2H7v2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z',
+  archive: 'M20.54 5.23L19.15 3.55A1.45 1.45 0 0018 3H6c-.47 0-.88.21-1.16.55L3.46 5.23A2 2 0 003 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5zM5.12 5l.81-1h12l.94 1z',
+  timer: 'M15 1H9v2h6zm-4 13h2V8h-2zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42A8.96 8.96 0 0012 4a9 9 0 109 9c0-2.12-.74-4.07-1.97-5.61zM12 20a7 7 0 110-14 7 7 0 010 14z',
+  shield: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z',
+  status: 'M12 2a10 10 0 100 20 10 10 0 000-20zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z',
+  gear: 'M19.14 12.94a7.07 7.07 0 000-1.88l2.03-1.58a.48.48 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.48.48 0 00-.59.22L2.74 8.87a.47.47 0 00.12.61l2.03 1.58a7.07 7.07 0 000 1.88l-2.03 1.58a.48.48 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 00-.12-.61zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z',
+  code: 'M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6z',
+  palette: 'M12 3a9 9 0 000 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16a5 5 0 005-5c0-4.42-4.03-8-9-8zm-5.5 9a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3-4a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm5 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3 4a1.5 1.5 0 110-3 1.5 1.5 0 010 3z',
+  moon: 'M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 01-4.4 2.26 5.4 5.4 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z',
   block: 'M12 2a10 10 0 100 20 10 10 0 000-20zM4 12c0-4.4 3.6-8 8-8 1.8 0 3.5.6 4.9 1.7L5.7 16.9A7.9 7.9 0 014 12zm8 8c-1.8 0-3.5-.6-4.9-1.7L18.3 7.1A7.9 7.9 0 0120 12c0 4.4-3.6 8-8 8z'
 };
 
@@ -170,6 +181,26 @@ const EMOTICONS = [
   ['(cash)', '💰'], ['(call)', '📞'], ['(mp)', '📱'], ['(e)', '✉️'], ['(o)', '🕒'], ['(~)', '🎬'], ['(cat)', '🐱'],
   ['(dog)', '🐶'], ['(snail)', '🐌'], ['(bug)', '🐛'], ['(fire)', '🔥'], ['(skitta)', '💙']
 ];
+// Bewegende emoticons (GIF's in /emoji). Codes én gewone emoji die erop lijken worden ze, zoals vroeger.
+const ANIMATED = [
+  ['smile', ['🙂', '☺️'], ['(smile)']], ['laugh', ['😃', '😄', '😁', '😆'], ['(laugh)']], ['sad', ['🙁', '☹️', '😞'], ['(sad)']],
+  ['cool', ['😎'], ['(cool)']], ['blush', ['😊'], ['(blush)']], ['angel', ['😇'], []], ['nerd', ['🤓'], []],
+  ['sick', ['🤢'], ['(sick)']], ['emo', ['😔'], ['(emo)']], ['music', ['🎵', '🎶'], []], ['eyebrow', ['🤨'], ['(eyebrow)', ':^)']],
+  ['swear', ['🤬'], ['(swear)']], ['heart', ['❤️', '♥️'], ['(heart)', '<3']], ['tired', ['😩', '😫'], ['(tired)', '|-(']],
+  ['angry', ['😠'], [':@']], ['mad', ['😡'], ['(mad)']], ['clap', ['👏'], []], ['sleepy', ['😴'], ['(sleepy)']],
+  ['talk', ['🗣️', '🗣'], ['(talk)']], ['callme', ['🤙'], ['(callme)']], ['finger', ['🖕'], ['(finger)']]
+];
+const ANIM_BY_EMOJI = new Map();
+for (const [file, emojis, codes] of ANIMATED) {
+  for (const e of emojis) ANIM_BY_EMOJI.set(e.replace(/\uFE0F/g, ''), file);
+  for (const c of codes) if (!EMOTICONS.some(([k]) => k.toLowerCase() === c.toLowerCase())) EMOTICONS.push([c, emojis[0]]);
+}
+const animFor = (emoji) => ANIM_BY_EMOJI.get(emoji.replace(/\uFE0F/g, ''));
+const emoNode = (bit) => {
+  const file = animFor(bit);
+  return file ? h('img', { class: 'emo anim', src: `/emoji/${file}.gif`, alt: bit, title: bit, draggable: 'false' }) : h('span', { class: 'emo' }, bit);
+};
+
 const EMO_RE = new RegExp(
   '(^|\\s)(' + EMOTICONS.map(([c]) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?=\\s|$|[.,!?])', 'gi'
 );
@@ -194,7 +225,7 @@ function richText(text) {
     }
     for (const [j, bit] of part.split(EMOJI_RE).entries()) {
       if (!bit) continue;
-      frag.append(j % 2 ? h('span', { class: 'emo' }, bit) : bit);
+      frag.append(j % 2 ? emoNode(bit) : bit);
     }
   });
   return frag;
@@ -873,6 +904,8 @@ async function loadConvs() {
   updateTitle();
   for (const c of list) if (c.missing?.length) E2E.fillMissing(c);
   for (const c of list) for (const m of c.members) Keys.check(m);
+  // App: meldingen van gesprekken zonder ongelezen berichten opruimen (ook als je ze elders las).
+  if (Native.api?.clearConv) for (const c of list) if (!c.unread) { try { Native.api.clearConv(String(c.id)); } catch {} }
 }
 
 const refreshConv = () => loadConvs();
@@ -1230,12 +1263,12 @@ function expireItems(conv) {
 
 function convOptions(conv) {
   return [
-    { label: conv.pinned ? 'Losmaken' : 'Vastpinnen', run: () => setConvMe(conv, { pinned: !conv.pinned }) },
-    { label: isMuted(conv) ? 'Gedempt' : 'Dempen', sub: muteItems(conv) },
-    { label: 'Verdwijnende berichten', sub: expireItems(conv) },
-    { label: conv.archived ? 'Uit archief halen' : 'Archiveren', run: () => { setConvMe(conv, { archived: !conv.archived }); if (!conv.archived) return; showHome(); } },
+    { label: conv.pinned ? 'Losmaken' : 'Vastpinnen', icon: 'pin', run: () => setConvMe(conv, { pinned: !conv.pinned }) },
+    { label: isMuted(conv) ? 'Gedempt' : 'Dempen', icon: 'bell', sub: muteItems(conv) },
+    { label: 'Verdwijnende berichten', icon: 'timer', sub: expireItems(conv) },
+    { label: conv.archived ? 'Uit archief halen' : 'Archiveren', icon: 'archive', run: () => { setConvMe(conv, { archived: !conv.archived }); if (!conv.archived) return; showHome(); } },
     { label: 'Zoeken in gesprek…', icon: 'search', run: () => { openConv(conv.id); openFind(); } },
-    conv.kind === 'direct' && { label: 'Veiligheidsnummer…', run: () => safetyDialog(otherId(conv)) }
+    conv.kind === 'direct' && { label: 'Veiligheidsnummer…', icon: 'shield', run: () => safetyDialog(otherId(conv)) }
   ];
 }
 
@@ -1351,6 +1384,10 @@ function onRead(e) {
 let readTimer = null;
 function markRead(convId, id) {
   try { Native.api?.clearConv?.(String(convId)); } catch {}
+  if (!Native.api && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistration().then((r) => r?.getNotifications({ tag: `c${convId}` }))
+      .then((list) => list?.forEach((n) => n.close())).catch(() => {});
+  }
   const conv = S.convs.get(convId);
   if (!conv || !id) return;
   conv.unread = 0;
@@ -1680,8 +1717,8 @@ function homeView() {
           h('li', null, 'Je Skittanaam is ', h('b', null, S.me.username), '. Geef die aan je vrienden zodat ze je kunnen toevoegen.'),
           h('li', null, h('a', { href: '#', onclick: (e) => { e.preventDefault(); addContactDialog(); } }, 'Zoek vrienden'), ' op naam of Skittanaam en stuur een contactverzoek.'),
           h('li', null, 'Bel of videobel gratis met je contactpersonen, of start een ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); groupDialog(); } }, 'groepsgesprek'), '.'),
-          h('li', null, 'Sleep een foto in een gesprek om hem te versturen.'),
-          h('li', null, 'Klik met rechts op een bericht om het te bewerken, te citeren of te melden.'))))));
+          h('li', null, mobile() ? 'Plak een foto uit je klembord of tik op + om foto\'s, video\'s en bestanden te versturen.' : 'Sleep een foto in een gesprek of plak hem met Ctrl+V om hem te versturen.'),
+          h('li', null, mobile() ? 'Houd een bericht ingedrukt om te reageren, te citeren, te bewerken of te melden. Veeg naar rechts om te antwoorden.' : 'Klik met rechts op een bericht om het te bewerken, te citeren of te melden.'))))));
 }
 
 function requestView(id) {
@@ -1872,14 +1909,98 @@ function messageRow(m, first, conv) {
     e.preventDefault();
     messageMenu(m, conv, e.clientX, e.clientY);
   });
-  // Lang indrukken op een telefoon = rechtermuisklik.
-  let press;
+  // Lang indrukken op een telefoon = rechtermuisklik; naar rechts vegen = antwoorden (zoals Signal).
+  let press, sx = 0, sy = 0, dx = 0, swiping = false;
+  const canReply = m.id && !m.del && !m.rm && !conv.left && !['call', 'system'].includes(m.k);
   row.addEventListener('touchstart', (e) => {
     const t0 = e.touches[0];
+    sx = t0.clientX; sy = t0.clientY; dx = 0; swiping = false;
     press = setTimeout(() => messageMenu(m, conv, t0.clientX, t0.clientY), 550);
   }, { passive: true });
-  for (const ev of ['touchend', 'touchmove', 'touchcancel']) row.addEventListener(ev, () => clearTimeout(press), { passive: true });
+  row.addEventListener('touchmove', (e) => {
+    clearTimeout(press);
+    if (!canReply) return;
+    const t0 = e.touches[0];
+    const mx = t0.clientX - sx, my = t0.clientY - sy;
+    if (!swiping && (Math.abs(my) > 12 || mx < 10 || sx < 24)) return;
+    if (!swiping && mx < Math.abs(my) * 1.5) return;
+    swiping = true;
+    const was = dx;
+    dx = Math.min(80, mx * 0.6);
+    row.style.transition = 'none';
+    row.style.transform = `translateX(${dx}px)`;
+    row.classList.toggle('swipe-ready', dx >= 56);
+    if (was < 56 && dx >= 56) navigator.vibrate?.(10);
+  }, { passive: true });
+  const end = () => {
+    clearTimeout(press);
+    if (!swiping) return;
+    row.style.transition = 'transform .22s cubic-bezier(.2, 1.2, .4, 1)';
+    row.style.transform = '';
+    row.classList.remove('swipe-ready');
+    if (dx >= 56) { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); }
+    swiping = false; dx = 0;
+  };
+  row.addEventListener('touchend', end, { passive: true });
+  row.addEventListener('touchcancel', end, { passive: true });
   return row;
+}
+
+// Spraakbericht: eigen speler (afspeelknop, balk om door te spoelen, tijd) in plaats van die van de browser.
+function voicePlayer(getUrl, dur) {
+  const au = new Audio();
+  au.preload = 'none';
+  let loaded = false;
+  const btn = h('button', { class: 'vo-play', type: 'button', 'aria-label': 'Afspelen' }, svg('play'));
+  const fill = h('div', { class: 'vo-fill' });
+  const knob = h('div', { class: 'vo-knob' });
+  const bar = h('div', { class: 'vo-bar' }, fill, knob);
+  const tm = h('span', { class: 'vo-time' }, duration(dur || 0));
+  const total = () => (Number.isFinite(au.duration) && au.duration > 0 ? au.duration : dur || 0);
+  const draw = () => {
+    const p = total() ? Math.min(1, au.currentTime / total()) : 0;
+    fill.style.width = `${p * 100}%`;
+    knob.style.left = `${p * 100}%`;
+    tm.textContent = duration(Math.round(au.paused && !au.currentTime ? total() : au.currentTime));
+  };
+  const load = async () => {
+    if (loaded) return true;
+    const u = await getUrl();
+    if (!u) { toastError('Dit spraakbericht kon niet worden geladen'); return false; }
+    au.src = u;
+    loaded = true;
+    return true;
+  };
+  btn.onclick = async (e) => {
+    e.stopPropagation();
+    if (!au.paused) return au.pause();
+    if (!(await load())) return;
+    // Er speelt er maar één tegelijk, net als in Signal.
+    for (const other of document.querySelectorAll('.att-voice.playing')) other._pause?.();
+    au.play().catch((err) => { if (err.name !== 'AbortError') toastError('Afspelen lukt niet'); });
+  };
+  au.onplay = () => { el.classList.add('playing'); btn.replaceChildren(svg('pause')); };
+  au.onpause = () => { el.classList.remove('playing'); btn.replaceChildren(svg('play')); };
+  au.onended = () => { au.currentTime = 0; draw(); };
+  au.ontimeupdate = draw;
+  au.onloadedmetadata = draw;
+  bar.onpointerdown = async (e) => {
+    e.stopPropagation();
+    if (!(await load())) return;
+    const seek = (ev) => {
+      const r = bar.getBoundingClientRect();
+      const p = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+      if (total()) au.currentTime = p * total();
+      draw();
+    };
+    seek(e);
+    bar.setPointerCapture?.(e.pointerId);
+    bar.onpointermove = seek;
+    bar.onpointerup = () => { bar.onpointermove = null; };
+  };
+  const el = h('span', { class: 'att-voice' }, btn, h('span', { class: 'vo-mid' }, bar, tm));
+  el._pause = () => au.pause();
+  return el;
 }
 
 // Gelezen door iedereen in het gesprek (alleen als zij leesbevestigingen delen).
@@ -1986,7 +2107,7 @@ function composeView(conv) {
     oninput: () => { autoGrow(ta); typingPing(conv.id); sendIcon(); },
     onpaste: (e) => {
       const files = [...(e.clipboardData?.files || [])];
-      if (files.length) { e.preventDefault(); for (const f of files) sendFile(conv.id, f); }
+      if (files.length) { e.preventDefault(); confirmPaste(conv.id, files); }
     }
   });
   ta.value = S.drafts.get(conv.id) || '';
@@ -2040,6 +2161,30 @@ function smileyIcon() {
   return s;
 }
 
+// Geplakte foto's eerst laten zien (zoals Signal), dan pas versturen.
+function confirmPaste(convId, files) {
+  if (!files.length) return;
+  const conv = S.convs.get(convId);
+  const urls = files.map((f) => URL.createObjectURL(f));
+  const previews = h('div', { class: 'paste-preview' }, files.map((f, i) =>
+    f.type.startsWith('video/') ? h('video', { src: urls[i], muted: true, playsinline: true, autoplay: true, loop: true })
+      : f.type.startsWith('image/') ? h('img', { src: urls[i], alt: '' })
+        : h('div', { class: 'att-file' }, h('span', { class: 'att-ico' }, fileIcon(f.name)), h('span', { class: 'att-name' }, h('b', null, f.name), h('span', { class: 'muted' }, fileSize(f.size))))));
+  dialog(files.length > 1 ? `${files.length} bijlagen versturen?` : 'Versturen?', h('div', null,
+    previews, conv ? h('p', { class: 'muted', style: { margin: '8px 0 0' } }, `Naar ${convTitle(conv)}`) : null),
+  [
+    { label: 'Versturen', default: true, run: (close) => { close(true); for (const f of files) sendFile(convId, f); } },
+    { label: 'Annuleren', value: null }
+  ]).then(() => setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 60000));
+}
+
+// Van het toetsenbord (Samsung, Gboard) via de Android-app.
+window.skittaPasteImage = (data, mime) => {
+  if (typeof S.cur !== 'number') return toastError('Open eerst een gesprek om iets te plakken');
+  const ext = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg').split(';')[0];
+  confirmPaste(S.cur, [new File([unb64(data)], `geplakt.${ext}`, { type: mime })]);
+};
+
 // Foto (of ander bestand) van het klembord versturen. In de Android-app leest de app het klembord
 // zelf (de WebView kan geen afbeeldingen plakken); elders de klembord-functie van de browser.
 async function pasteFromClipboard(convId) {
@@ -2049,14 +2194,14 @@ async function pasteFromClipboard(convId) {
       if (!raw) return toastError('Er staat geen foto op het klembord');
       const { mime, data, name } = JSON.parse(raw);
       const bytes = unb64(data);
-      return sendFile(convId, new File([bytes], name || `klembord.${(mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`, { type: mime }));
+      return confirmPaste(convId, [new File([bytes], name || `klembord.${(mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`, { type: mime })]);
     }
     if (!navigator.clipboard?.read) return toastError('Plakken wordt in deze browser niet ondersteund; gebruik lang indrukken → Plakken in het tekstvak');
     for (const item of await navigator.clipboard.read()) {
       const type = item.types.find((t) => t.startsWith('image/') || t.startsWith('video/'));
       if (!type) continue;
       const blob = await item.getType(type);
-      return sendFile(convId, new File([blob], `klembord.${type.split('/')[1].replace('jpeg', 'jpg')}`, { type }));
+      return confirmPaste(convId, [new File([blob], `klembord.${type.split('/')[1].replace('jpeg', 'jpg')}`, { type })]);
     }
     const text = await navigator.clipboard.readText?.();
     if (text) {
@@ -2494,9 +2639,7 @@ function attachmentView(m) {
     box.style.aspectRatio = `${w} / ${hh}`;
     wrap.append(box);
   } else if (meta.t === 'voice') {
-    const au = h('audio', { controls: true, preload: 'metadata' });
-    getUrl().then((u) => { if (u) au.src = u; });
-    wrap.append(h('span', { class: 'att-voice' }, svg('mic'), au, meta.dur ? h('span', { class: 'muted' }, duration(meta.dur)) : null));
+    wrap.append(voicePlayer(getUrl, meta.dur));
   } else {
     const link = h('a', { class: 'att-file', href: '#', onclick: async (e) => {
       e.preventDefault();
@@ -2628,11 +2771,11 @@ function glassMenu(items, x, y, anchor) {
     const id = `m${n++}`;
     if (it.sub) {
       glassPicks.set(id, () => setTimeout(() => glassMenu(it.sub, x, y, anchor), 380));
-      rows.push({ id, title: `${it.label}  ›`, icon: ICONS[it.icon] || '' });
+      rows.push({ id, title: `${it.label}  ›`, icon: nativePath(it.icon) });
       return;
     }
     glassPicks.set(id, it.run);
-    const row = { id, title: it.label, disabled: !!it.disabled, icon: ICONS[it.icon] || '' };
+    const row = { id, title: it.label, disabled: !!it.disabled, icon: nativePath(it.icon) };
     if (it.checked !== undefined) row.checked = !!it.checked;
     if (/verwijder|afmelden|blokkeren/i.test(it.label)) row.destructive = true;
     rows.push(row);
@@ -2696,9 +2839,11 @@ function popMenu(items, x, y, opts = {}) {
   }
   menu.addEventListener('contextmenu', (e) => e.preventDefault());
   $('#layer').append(menu);
-  const r = menu.getBoundingClientRect();
-  menu.style.left = `${Math.max(4, Math.min(x, innerWidth - r.width - 4))}px`;
-  menu.style.top = `${Math.max(4, Math.min(y, innerHeight - r.height - 4))}px`;
+  // offsetWidth: de inschuif-animatie schaalt het menu, de echte maat blijft gelijk.
+  const r = { width: menu.offsetWidth, height: menu.offsetHeight };
+  const pad = mobile() ? 12 : 4;
+  menu.style.left = `${Math.max(pad, Math.min(x, innerWidth - r.width - pad))}px`;
+  menu.style.top = `${Math.max(pad, Math.min(y, innerHeight - r.height - pad))}px`;
   if (!opts.child) setTimeout(() => document.addEventListener('pointerdown', outsideMenu, true), 0);
   return menu;
 }
@@ -2795,7 +2940,7 @@ function messageMenu(m, conv, x, y) {
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
-    !gone && m.k !== 'call' && { label: 'Doorsturen…', icon: 'back', run: () => forwardDialog(m) },
+    !gone && m.k !== 'call' && { label: 'Doorsturen…', icon: 'forward', run: () => forwardDialog(m) },
     { label: 'Verwijderen voor mij', icon: 'trash', run: () => hideForMe(m) },
     !mine && !gone && m.k !== 'call' && '-',
     !mine && !gone && m.k !== 'call' && { label: 'Bericht melden…', icon: 'flag', run: () => reportDialog(m) }
@@ -2835,7 +2980,9 @@ async function deleteMsg(m) {
 
 function emoticonMenu(anchor, ta) {
   closeMenus();
-  const pop = h('div', { class: 'menu emo-pop' }, h('div', { class: 'emo-grid' }, EMOTICONS.map(([code, emo]) =>
+  const animated = ANIMATED.filter(([file]) => file !== 'finger').map(([file, emojis, codes]) => [codes[0] || EMOTICONS.find(([, e]) => e === emojis[0])?.[0] || emojis[0], emojis[0], file]);
+  const rest = EMOTICONS.filter(([, e]) => !animFor(e)).map(([c, e]) => [c, e, null]);
+  const pop = h('div', { class: 'menu emo-pop' }, h('div', { class: 'emo-grid' }, [...animated, ...rest].map(([code, emo, file]) =>
     h('button', {
       title: code,
       onclick: () => {
@@ -2845,15 +2992,19 @@ function emoticonMenu(anchor, ta) {
         ta.setRangeText(ins, start, ta.selectionEnd, 'end');
         ta.focus();
         closeMenus();
+        sendIcon();
       }
-    }, emo))));
-  pop.style.padding = '2px';
-  pop.style.background = '#fff';
+    }, file ? h('img', { src: `/emoji/${file}.gif`, alt: emo, loading: 'lazy' }) : emo))));
+  if (!mobile()) {
+    pop.style.padding = '2px';
+    pop.style.background = '#fff';
+  }
   $('#layer').append(pop);
   const r = anchor.getBoundingClientRect();
-  const pr = pop.getBoundingClientRect();
-  pop.style.left = `${Math.max(4, Math.min(r.left, innerWidth - pr.width - 4))}px`;
-  pop.style.top = `${Math.max(4, r.top - pr.height - 4)}px`;
+  const pr = { width: pop.offsetWidth, height: pop.offsetHeight };
+  const pad = mobile() ? 12 : 4;
+  pop.style.left = `${Math.max(pad, Math.min(r.left, innerWidth - pr.width - pad))}px`;
+  pop.style.top = `${Math.max(pad, r.top - pr.height - 8)}px`;
   setTimeout(() => document.addEventListener('pointerdown', outsideMenu, true), 0);
 }
 
@@ -3027,18 +3178,18 @@ const SOURCE_URL = 'https://github.com/timmmmmmmmn/skitta';
 function moreMenu(anchor) {
   const r = anchor.getBoundingClientRect();
   popMenu([
-    { label: 'Online-status', icon: 'user', sub: presenceItems() },
+    { label: 'Online-status', icon: 'status', sub: presenceItems() },
     { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
-    { label: 'Weergave', icon: 'screen', sub: modeItems() },
-    { label: 'Thema', icon: 'photo', sub: mobileThemeItems() },
-    { label: 'Extra', icon: 'more', sub: [
-      { label: 'Opties…', run: optionsDialog },
+    { label: 'Weergave', icon: 'moon', sub: modeItems() },
+    { label: 'Thema', icon: 'palette', sub: mobileThemeItems() },
+    { label: 'Extra', icon: 'gear', sub: [
+      { label: 'Opties…', icon: 'gear', run: optionsDialog },
       { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
-      S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
-      Native.api?.checkForUpdate && { label: `Controleren op updates (${Native.api.appVersion?.() || '?'})`, run: () => Native.api.checkForUpdate() },
-      { label: 'Over Skitta', run: aboutDialog }
+      S.me.is_admin && { label: 'Beheer…', icon: 'shield', run: () => window.open('/beheer', '_blank') },
+      Native.api?.checkForUpdate && { label: `Controleren op updates (${Native.api.appVersion?.() || '?'})`, icon: 'download', run: () => Native.api.checkForUpdate() },
+      { label: 'Over Skitta', icon: 'chat', run: aboutDialog }
     ] },
-    { label: 'Broncode', icon: 'chat', run: () => window.open(SOURCE_URL, '_blank', 'noopener') }
+    { label: 'Broncode', icon: 'code', run: () => window.open(SOURCE_URL, '_blank', 'noopener') }
   ], r.left, r.top - 300, { anchor });
 }
 
@@ -3074,12 +3225,35 @@ function renderNav() {
 }
 
 // In de Android-app: de glazen balk precies over de plek van de balk in de pagina leggen.
+// Android leest geen samengeperste boogvlaggen ("a6 6 0 0018 3"): die schrijven we voluit.
+function nativePath(name) {
+  const d = ICONS[name];
+  if (!d) return '';
+  const tok = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g);
+  const out = [];
+  let cmd = '', n = 0;
+  for (let i = 0; i < tok.length; i++) {
+    const t = tok[i];
+    if (/[a-zA-Z]/.test(t)) { cmd = t; n = 0; out.push(t); continue; }
+    if (/[aA]/.test(cmd) && (n % 7 === 3 || n % 7 === 4) && t.length > 1 && /^[01]/.test(t)) {
+      // De vlag is één cijfer; de rest hoort bij het volgende getal.
+      out.push(t[0]);
+      tok.splice(i + 1, 0, t.slice(1));
+      n++;
+      continue;
+    }
+    out.push(t);
+    n++;
+  }
+  return out.join(' ');
+}
+
 function glassBar() {
   const api = Native.api;
   if (!api?.glassBar) return;
   const pill = $('#mnav-pill').getBoundingClientRect();
   const add = $('#mnav-add').getBoundingClientRect();
-  const visible = mobile() && !!S.me && !$('#app').classList.contains('show-pane') && !$('#layer .overlay');
+  const visible = mobile() && !!S.me && !$('#app').classList.contains('show-pane') && !overlayOpen();
   const box = (r) => ({ x: r.left, y: r.top, w: r.width, h: r.height });
   let unread = 0;
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
@@ -3097,6 +3271,10 @@ function glassBar() {
 }
 
 window.skittaGlassNav = (id) => navTo(id);
+// Vensters, onderbladen en de galerij liggen boven alles: dan hoort de glazen balk weg.
+const overlayOpen = () => !!document.querySelector('#layer .overlay, #layer .sheet-back, #layer .lightbox, .gallery');
+new MutationObserver(() => glassBar()).observe(document.getElementById('layer'), { childList: true });
+new MutationObserver(() => glassBar()).observe(document.body, { childList: true });
 window.addEventListener('resize', () => { renderNav(); measureHead(); });
 
 // ---------- Licht of donker (telefoon) ----------
@@ -3359,7 +3537,7 @@ async function profileDialog() {
   });
   await dialog('Profiel bewerken', h('div', null,
     h('div', { class: 'profile-top' },
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' } }, av,
+      h('div', { class: 'profile-photo' }, av,
         h('button', { class: 'btn', type: 'button', onclick: () => file.click() }, 'Foto wijzigen…'),
         h('a', { href: '#', onclick: async (e) => { e.preventDefault(); await api('DELETE', 'me/avatar'); me.avatar = null; av.className = 'avatar xl none'; av.style.backgroundImage = ''; renderMe(); } }, 'Foto verwijderen'), file),
       h('div', { class: 'grow' },
@@ -3547,7 +3725,6 @@ async function optionsDialog() {
       toastError(e.message);
     }
   };
-  const sample = (name) => h('button', { class: 'btn', type: 'button', style: { minWidth: '0' }, onclick: () => Sound.play(name, { force: true }) }, '▶');
   await dialog('Opties', h('div', null,
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Geluiden'),
       cb('sounds', 'Geluiden afspelen', true),
@@ -3555,8 +3732,8 @@ async function optionsDialog() {
       cb('onlineSounds', 'Geluid als een contactpersoon online of offline gaat', true),
       cb('sentSound', 'Geluid bij het versturen van een bericht'),
       h('label', null, 'Volume ', vol),
-      h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '6px' } }, 'Proberen:',
-        [['IM', 'Bericht'], ['CALL_IN', 'Oproep'], ['ONLINE', 'Online'], ['LOGIN', 'Aanmelden'], ['HANGUP', 'Ophangen']].map(([n, l]) => h('span', null, sample(n), ' ', l, ' ')))),
+      h('div', { class: 'sound-tests' }, h('span', { class: 'muted' }, 'Proberen'),
+        [['IM', 'Bericht'], ['CALL_IN', 'Oproep'], ['ONLINE', 'Online'], ['LOGIN', 'Aanmelden'], ['HANGUP', 'Ophangen']].map(([n, l]) => h('button', { class: 'btn sound-test', type: 'button', onclick: () => Sound.play(n, { force: true }) }, '▶ ' + l)))),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Meldingen'),
       Native.api?.hideConnection ? h('label', null, h('button', { class: 'btn', type: 'button', onclick: () => Native.api.hideConnection() }, 'Melding "Skitta is verbonden" verbergen…')) : null,
     Native.api?.setBackground ? (() => {
@@ -3644,6 +3821,97 @@ async function testDialog() {
   stream?.getTracks().forEach((t) => t.stop());
 }
 
+// ---------- Eigen videospeler (website en computer-apps) ----------
+// Grote video's streamen via de service worker (alleen de nodige stukken, ontsleuteld onderweg);
+// kleine komen in één keer. De bediening is van Skitta zelf, niet die van de browser.
+
+async function videoSource(m, meta) {
+  const sw = navigator.serviceWorker?.controller;
+  if (meta.big && sw && m.mk && !m.localUrl) {
+    sw.postMessage({ t: 'stream', id: meta.big, file: meta.big, key: m.mk, size: meta.size, mime: meta.mime });
+    return `/stream/${encodeURIComponent(meta.big)}`;
+  }
+  return mediaUrl(m, meta);
+}
+
+function skittaPlayer(m, meta) {
+  const v = h('video', { playsinline: true, preload: 'metadata', poster: meta.thumb || null });
+  const playBig = h('button', { class: 'vp-big', title: 'Afspelen' }, svg('play'));
+  const playBtn = h('button', { class: 'vp-btn', title: 'Afspelen/pauzeren' }, svg('play'));
+  const cur = h('span', { class: 'vp-time' }, '0:00');
+  const total = h('span', { class: 'vp-time' }, meta.dur ? duration(meta.dur) : '0:00');
+  const bar = h('input', { class: 'vp-bar', type: 'range', min: 0, max: 1000, value: 0, 'aria-label': 'Tijdlijn' });
+  const mute = h('button', { class: 'vp-btn', title: 'Geluid' }, svg('mic'));
+  const full = h('button', { class: 'vp-btn', title: 'Volledig scherm' }, svg('full'));
+  const spin = h('div', { class: 'vp-spin', hidden: true });
+  const controls = h('div', { class: 'vp-controls' }, playBtn, cur, bar, total, mute, full);
+  const box = h('div', { class: 'vplayer paused' }, v, spin, playBig, controls);
+  let hideT;
+  const show = () => {
+    box.classList.add('show');
+    clearTimeout(hideT);
+    if (!v.paused) hideT = setTimeout(() => box.classList.remove('show'), 2500);
+  };
+  const toggle = () => (v.paused ? v.play().catch(() => {}) : v.pause());
+  const icon = () => {
+    playBtn.replaceChildren(svg(v.paused ? 'play' : 'pause'));
+    box.classList.toggle('paused', v.paused);
+    show();
+  };
+  let seeking = false;
+  const paint = () => {
+    const d = v.duration || meta.dur || 0;
+    if (!seeking && d) bar.value = String(Math.round((v.currentTime / d) * 1000));
+    cur.textContent = duration(Math.floor(v.currentTime || 0));
+    if (d) total.textContent = duration(Math.round(d));
+    let buf = 0;
+    for (let i = 0; i < v.buffered.length; i++) if (v.buffered.start(i) <= v.currentTime + 0.5) buf = Math.max(buf, v.buffered.end(i));
+    bar.style.setProperty('--played', `${(Number(bar.value) / 10).toFixed(1)}%`);
+    bar.style.setProperty('--buffered', `${d ? Math.min(100, (buf / d) * 100).toFixed(1) : 0}%`);
+  };
+  v.addEventListener('play', icon);
+  v.addEventListener('pause', icon);
+  v.addEventListener('ended', () => { box.classList.add('show'); icon(); });
+  v.addEventListener('timeupdate', paint);
+  v.addEventListener('progress', paint);
+  v.addEventListener('loadedmetadata', paint);
+  v.addEventListener('waiting', () => { spin.hidden = false; });
+  v.addEventListener('playing', () => { spin.hidden = true; });
+  v.addEventListener('canplay', () => { spin.hidden = true; });
+  let retried = false;
+  v.addEventListener('error', async () => {
+    // De service worker kan zijn herstart (en vergeten): opnieuw aanmelden en één keer opnieuw proberen.
+    if (retried) return;
+    retried = true;
+    const t = v.currentTime;
+    v.src = await videoSource(m, meta);
+    v.currentTime = t;
+    v.play().catch(() => {});
+  });
+  bar.addEventListener('input', () => { seeking = true; bar.style.setProperty('--played', `${Number(bar.value) / 10}%`); });
+  bar.addEventListener('change', () => {
+    const d = v.duration || meta.dur || 0;
+    if (d) v.currentTime = (Number(bar.value) / 1000) * d;
+    seeking = false;
+    show();
+  });
+  playBig.onclick = (e) => { e.stopPropagation(); toggle(); };
+  playBtn.onclick = (e) => { e.stopPropagation(); toggle(); };
+  mute.onclick = (e) => { e.stopPropagation(); v.muted = !v.muted; mute.replaceChildren(svg(v.muted ? 'micoff' : 'mic')); };
+  full.onclick = (e) => {
+    e.stopPropagation();
+    if (document.fullscreenElement) document.exitFullscreen();
+    else (box.requestFullscreen || box.webkitRequestFullscreen)?.call(box);
+  };
+  v.addEventListener('click', () => (box.classList.contains('show') || v.paused ? toggle() : show()));
+  box.addEventListener('pointermove', show);
+  box.play = () => v.play().catch(() => {});
+  box.pause = () => v.pause();
+  box.video = v;
+  videoSource(m, meta).then((src) => { if (src) { v.src = src; if (box.autoplay) v.play().catch(() => {}); } });
+  return box;
+}
+
 // ---------- Galerij: horizontaal door alle foto's en video's van een gesprek ----------
 // Vegen (telefoon), pijltjestoetsen of de pijlknoppen (computer). Video's: in de Android-app de
 // eigen videospeler van Android, elders de speler van het systeem (WebView2 / WebKit / browser).
@@ -3665,6 +3933,9 @@ const Gallery = {
 
   open(m) {
     this.close();
+    // Android-app: een video meteen in de eigen speler openen (zoals Signal), zonder galerij ertussen.
+    const meta0 = attachMeta(m);
+    if (meta0?.t === 'video' && Native.api?.videoPlay) return this.playNative(m, meta0, null);
     this.items = this.collect(m.c);
     this.index = Math.max(0, this.items.findIndex((x) => x === m || (x.id && x.id === m.id) || (x.cid && x.cid === m.cid)));
     const track = h('div', { class: 'g-track' }, this.items.map((it, i) => h('div', { class: 'g-slide', 'data-i': i })));
@@ -3675,7 +3946,7 @@ const Gallery = {
         h('button', { class: 'g-btn', title: 'Sluiten (Esc)', onclick: () => this.close() }, svg('close')),
         info, counter,
         h('button', { class: 'g-btn', title: 'Opslaan', onclick: () => this.save() }, svg('download')),
-        h('button', { class: 'g-btn', title: 'Doorsturen', onclick: () => { const it = this.items[this.index]; this.close(); forwardDialog(it); } }, svg('back'))),
+        h('button', { class: 'g-btn', title: 'Doorsturen', onclick: () => { const it = this.items[this.index]; this.close(); forwardDialog(it); } }, svg('forward'))),
       track,
       h('button', { class: 'g-nav g-prev', title: 'Vorige', onclick: () => this.go(this.index - 1) }, svg('left')),
       h('button', { class: 'g-nav g-next', title: 'Volgende', onclick: () => this.go(this.index + 1) }, svg('right')));
@@ -3722,9 +3993,9 @@ const Gallery = {
     this.el.querySelector('.g-prev').hidden = this.index === 0;
     this.el.querySelector('.g-next').hidden = this.index === this.items.length - 1;
     // Video's die uit beeld zijn: pauzeren.
-    for (const v of this.track.querySelectorAll('video')) {
-      if (Number(v.closest('.g-slide').dataset.i) !== this.index) v.pause();
-      else if (v.paused && !v.dataset.started) { v.dataset.started = '1'; v.play().catch(() => {}); }
+    for (const p of this.track.querySelectorAll('.vplayer')) {
+      if (Number(p.closest('.g-slide').dataset.i) !== this.index) p.pause();
+      else if (!p.dataset.started) { p.dataset.started = '1'; p.play(); }
     }
   },
 
@@ -3741,15 +4012,17 @@ const Gallery = {
         h('span', { class: 'g-vinfo' }, [meta.dur ? duration(meta.dur) : '', meta.size ? fileSize(meta.size) : ''].filter(Boolean).join(' · '))));
       return;
     }
-    slide.append(h('div', { class: 'g-loading' }, meta.t === 'video' ? 'Video laden…' : ''));
+    if (meta.t === 'video') {
+      const player = skittaPlayer(m, meta);
+      if (i === this.index) { player.autoplay = true; player.dataset.started = '1'; }
+      slide.append(player);
+      return;
+    }
+    slide.append(h('div', { class: 'g-loading' }, ''));
     const url = await mediaUrl(m, meta);
     slide.replaceChildren();
     if (!url) { slide.append(h('div', { class: 'g-loading' }, 'Kon niet worden geladen')); return; }
-    if (meta.t === 'video') {
-      const v = h('video', { src: url, controls: true, playsinline: true, preload: 'metadata', poster: meta.thumb || null });
-      slide.append(v);
-      if (i === this.index) { v.dataset.started = '1'; v.play().catch(() => {}); }
-    } else {
+    {
       const img = h('img', { src: url, alt: '', draggable: 'false' });
       // Dubbelklikken of dubbeltikken: inzoomen.
       img.addEventListener('dblclick', (e) => {
@@ -3765,7 +4038,17 @@ const Gallery = {
 
   // Android: de ontsleutelde video in stukjes naar de app sturen en daar afspelen.
   async playNative(m, meta, slide) {
-    const btn = slide.querySelector('.g-vinfo');
+    // Groot (eigen bestandsserver): de app streamt zelf, meteen.
+    if (meta.big && !m.localUrl && Native.api.videoStream && m.mk) {
+      try {
+        const t = await api('GET', `big/${encodeURIComponent(meta.big)}`);
+        Native.api.videoStream(t.url, t.token, m.mk, String(meta.size || 0), meta.mime || 'video/mp4', meta.name || 'Video');
+        return;
+      } catch (e) {
+        return toastError(e.message);
+      }
+    }
+    const btn = slide?.querySelector('.g-vinfo');
     const url = await mediaUrl(m, meta);
     if (!url) return toastError('Deze video kon niet worden geladen');
     const blob = await (await fetch(url)).blob();

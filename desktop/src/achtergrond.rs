@@ -135,7 +135,8 @@ fn run(state: &mut State, stop: &AtomicBool, proxy: &EventLoopProxy<UserEvent>) 
                         return Err(Stop::Unauthorized);
                     }
                     if let Some((title, body)) = handle(state, &e) {
-                        let _ = proxy.send_event(UserEvent::Notify { title, body });
+                        let call = e["t"] == "call";
+                        let _ = proxy.send_event(UserEvent::Notify { title, body, call });
                     }
                 }
             }

@@ -2,7 +2,7 @@
 body { overflow: auto; background: linear-gradient(#ffffff, #eef7fc 400px) fixed; }
 .adm { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
 .adm-head { display: flex; align-items: center; gap: 14px; padding: 18px 0 12px; }
-.adm-head img { width: 52px; height: 52px; mix-blend-mode: multiply; }
+.adm-head img { width: 52px; height: 52px; }
 .adm-head h1 { margin: 0; font-size: 22px; font-weight: 400; color: #0b6fa0; }
 .adm-head p { margin: 2px 0 0; color: var(--muted); }
 .adm-head .btn { margin-left: auto; text-decoration: none; color: inherit; }

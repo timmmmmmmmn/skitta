@@ -148,18 +148,42 @@ async fn upload(State(cfg): State<Arc<Config>>, Path(id): Path<String>, q: Token
     StatusCode::CREATED.into_response()
 }
 
+/// Downloaden, ook in stukjes (HTTP Range), zodat video's kunnen streamen en je kunt doorspoelen.
 async fn download(State(cfg): State<Arc<Config>>, Path(id): Path<String>, q: TokenQuery, headers: HeaderMap) -> Response {
     if !valid_id(&id) || check_token(&cfg, &token_from(&headers, &q), "get", &id).is_none() {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Ok(file) = tokio::fs::File::open(cfg.dir.join(&id)).await else {
+    let Ok(mut file) = tokio::fs::File::open(cfg.dir.join(&id)).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let len = file.metadata().await.map(|m| m.len()).unwrap_or(0);
-    let mut res = Body::from_stream(tokio_util::io::ReaderStream::new(file)).into_response();
+    let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(|v| {
+        let r = v.strip_prefix("bytes=")?;
+        let (a, b) = r.split_once('-')?;
+        let start: u64 = a.parse().ok()?;
+        let end: u64 = if b.is_empty() { len.saturating_sub(1) } else { b.parse::<u64>().ok()?.min(len.saturating_sub(1)) };
+        (start <= end && start < len).then_some((start, end))
+    });
+    let (status, start, end) = match range {
+        Some((a, b)) => (StatusCode::PARTIAL_CONTENT, a, b),
+        None => (StatusCode::OK, 0, len.saturating_sub(1)),
+    };
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    if start > 0 && file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let count = if len == 0 { 0 } else { end - start + 1 };
+    let mut res = Body::from_stream(tokio_util::io::ReaderStream::new(file.take(count))).into_response();
+    *res.status_mut() = status;
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
-    h.insert(header::CONTENT_LENGTH, HeaderValue::from(len));
+    h.insert(header::CONTENT_LENGTH, HeaderValue::from(count));
+    h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    if status == StatusCode::PARTIAL_CONTENT {
+        if let Ok(v) = HeaderValue::from_str(&format!("bytes {start}-{end}/{len}")) {
+            h.insert(header::CONTENT_RANGE, v);
+        }
+    }
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     res
@@ -198,7 +222,8 @@ async fn main() {
     let cors = CorsLayer::new()
         .allow_origin(origin.parse::<HeaderValue>().expect("SKITTA_FILES_ORIGIN"))
         .allow_methods([Method::GET, Method::PUT])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::RANGE])
+        .expose_headers([header::CONTENT_RANGE, header::CONTENT_LENGTH, header::ACCEPT_RANGES])
         .max_age(Duration::from_secs(86400));
     let app = Router::new()
         .route("/f/{id}", put(upload).get(download))

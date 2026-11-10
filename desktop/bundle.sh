@@ -12,8 +12,8 @@ cp target/release/skitta "$APP/Contents/MacOS/Skitta"
 SET=target/Skitta.iconset
 rm -rf "$SET"; mkdir -p "$SET"
 for s in 16 32 128 256 512; do
-  sips -z $s $s ../icon.png --out "$SET/icon_${s}x${s}.png" >/dev/null
-  d=$((s * 2)); sips -z $d $d ../icon.png --out "$SET/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z $s $s ../icon-transparent.png --out "$SET/icon_${s}x${s}.png" >/dev/null
+  d=$((s * 2)); sips -z $d $d ../icon-transparent.png --out "$SET/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$SET" -o "$APP/Contents/Resources/Skitta.icns"
 

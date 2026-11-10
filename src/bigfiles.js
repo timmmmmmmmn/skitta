@@ -49,5 +49,5 @@ export async function downloadTicket(env, user, id) {
   ).bind(user.id, id).first();
   if (!row) throw new HttpError(404, 'Bestand niet gevonden');
   if (row.expires_at < Date.now()) throw new HttpError(410, 'Dit bestand is verlopen en verwijderd');
-  return { url: `${env.FILES_URL.replace(/\/$/, '')}/f/${id}`, token: await token(env, 'get', id, row.size, 600), size: row.size };
+  return { url: `${env.FILES_URL.replace(/\/$/, '')}/f/${id}`, token: await token(env, 'get', id, row.size, 6 * 3600), size: row.size };
 }

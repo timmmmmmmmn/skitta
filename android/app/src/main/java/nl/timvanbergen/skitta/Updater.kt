@@ -27,7 +27,7 @@ object Updater {
 
     private const val LATEST = "https://skitta.timvanbergen.nl/download/android.json"
     private const val PREFS = "skitta-update"
-    private const val CHECK_EVERY = 3 * 60 * 60 * 1000L
+    private const val CHECK_EVERY = 30 * 60 * 1000L
     private const val CHANNEL = "updates"
 
     private data class Release(val code: Long, val name: String, val notes: String, val url: String)
@@ -42,7 +42,7 @@ object Updater {
     fun currentName(context: Context): String =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
 
-    /** Bij openen en terugkomen in de app: hooguit eens per drie uur kijken. */
+    /** Bij openen en terugkomen in de app: hooguit eens per half uur kijken. */
     fun checkQuietly(activity: Activity) {
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (System.currentTimeMillis() - prefs.getLong("checked", 0L) < CHECK_EVERY) return

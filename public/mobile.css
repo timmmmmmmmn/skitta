@@ -135,9 +135,19 @@
   .m-attach, .m-emo, .m-send { width: 42px; height: 42px; flex: none; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: none; }
   .m-attach svg { width: 26px; height: 26px; fill: var(--m-muted); }
   .m-emo svg { width: 24px; height: 24px; filter: grayscale(1) opacity(.6); }
+  html[data-mode="dark"] .m-emo svg { filter: grayscale(1) brightness(1.7) opacity(.75); }
   .m-send { background: var(--m-blue); }
   .m-send svg { width: 22px; height: 22px; fill: #fff; }
-  .compose .editing, .compose .reply { margin: 0 8px 6px; padding: 6px 10px; border-left: 3px solid var(--m-blue); background: #f2f6f9; border-radius: 6px; }
+  .compose .editing, .compose .reply { margin: 0 8px 6px; padding: 8px 10px; border-left: 3px solid var(--m-blue); background: #f2f6f9; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .compose .editing svg, .compose .reply svg { width: 18px; height: 18px; flex: none; fill: var(--m-blue); }
+  .compose .reply span, .compose .editing span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .compose .reply a, .compose .editing a { flex: none; margin-left: auto; }
+  html:not([data-mtheme]) .msg.mine :is(.vo-play, .vo-knob, .vo-fill) { background: #fff; }
+  html:not([data-mtheme]) .msg.mine .vo-play svg { fill: var(--m-blue); }
+  html:not([data-mtheme]) .msg.mine .vo-bar::before { background: rgba(255, 255, 255, .4); }
+  html:not([data-mtheme]) .msg.mine .vo-time { color: rgba(255, 255, 255, .85); }
+  .att-voice { width: 220px; }
+  .att-voice > svg { display: none; }
   .rec-bar { padding: 6px 10px; font-size: 15px; }
 
   /* Vensters worden onderbladen, menu's ronde kaartjes */
@@ -150,12 +160,28 @@
   .dialog .dfoot { border: 0; background: #fff; padding: 10px 20px calc(14px + var(--sab, env(safe-area-inset-bottom))); }
   .dialog .btn { min-width: 0; height: 42px; padding: 0 18px; border-radius: 21px; border: 0; background: #f0f2f5; box-shadow: none; font-size: 15px; font-weight: 600; }
   .dialog .btn.default { background: var(--m-blue); color: #fff; }
+  .profile-top { flex-direction: column; align-items: stretch; gap: 16px; }
+  .profile-photo { flex-direction: row; justify-content: center; gap: 14px; }
+  .dialog .profile-photo .btn { height: 36px; padding: 0 14px; font-size: 14px; }
+  .opt-group { border: 0; border-radius: 14px; padding: 10px 14px 4px; background: rgba(127, 140, 155, .1); }
+  .opt-group legend { float: left; width: 100%; padding: 0 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--m-blue); }
+  .opt-group > :not(legend) { clear: both; }
+  .opt-group label { min-height: 34px; font-size: 15px; line-height: 1.3; }
+  .opt-group input[type="checkbox"] { width: 20px; height: 20px; flex: none; accent-color: var(--m-blue); }
+  .sound-tests { gap: 6px; margin-bottom: 10px; }
+  .dialog .opt-group label > .btn { height: auto; min-height: 36px; padding: 6px 14px; white-space: normal; text-align: left; font-weight: 500; font-size: 14px; }
+  .sound-tests > span { width: 100%; font-size: 13px; }
+  .dialog .sound-tests .btn { height: 32px; padding: 0 12px; font-size: 13px; font-weight: 500; }
   .field, .dialog .field { height: 42px; border-radius: 10px; border: 1px solid #dfe3e7; font-size: 16px; padding: 8px 12px; }
   textarea.field { height: auto; }
   .menu { border: 0; border-radius: 14px; padding: 6px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .22); min-width: 220px; }
   .menu .mi { height: 44px; font-size: 15px; border-radius: 10px; border: 0 !important; }
   .menu .mi:hover, .menu .mi.hot { background: #f2f3f5 !important; }
   .menu .sep { margin: 4px 8px; }
+  .menu .mi { padding: 0 12px; }
+  .menu .mi .mi-ico { width: 22px; height: 22px; margin-right: 14px; }
+  .menu .mi .mi-ico svg { width: 20px; height: 20px; fill: currentColor; opacity: .82; }
+  .menu .mi.sub::after { width: 7px; height: 7px; border: solid currentColor; border-width: 2px 2px 0 0; transform: rotate(45deg); opacity: .5; margin-right: 4px; }
   .home-head { padding-top: calc(18px + var(--sat, 0px)); }
   .card, .card h2 { border-radius: 14px; }
   .card h2 { border-radius: 14px 14px 0 0; background: #f7f8f9; }
@@ -229,7 +255,6 @@
   html[data-mode="dark"] .notice, html[data-mode="dark"] .findbar { background: #2a2614; border-color: #4a4120; color: #e8d68c; }
   html[data-mode="dark"] .auth { background: linear-gradient(#121416, #0c2230); }
   html[data-mode="dark"] .auth-form label, html[data-mode="dark"] .auth-form .check { color: var(--m-text); }
-  html[data-mode="dark"] .auth-logo { mix-blend-mode: normal; border-radius: 24px; }
   html[data-mode="dark"] .avatar.none { background-color: #2f3439; }
   html[data-mode="dark"] .list-av .st { box-shadow: 0 0 0 2px #121416; }
   html[data-mode="dark"] .safety { background: #1c2024; border-color: #2f3439; }
@@ -260,7 +285,7 @@
 .vplay svg { width: 28px; height: 28px; fill: #fff; margin-left: 3px; }
 .vplay.big { width: 76px; height: 76px; margin: -38px 0 0 -38px; }
 .vplay.big svg { width: 42px; height: 42px; }
-.vdur { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; }
+.vdur { position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; }
 
 /* ---------- Galerij ---------- */
 .gallery { position: fixed; inset: 0; z-index: 95; background: #000; color: #fff; outline: none; animation: fade .15s; }
@@ -293,3 +318,74 @@
 .g-prev { left: 14px; }
 .g-next { right: 14px; }
 @media (max-width: 720px) { .g-nav { display: none; } }
+.paste-preview { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-height: 55vh; overflow: auto; }
+.paste-preview img, .paste-preview video { max-width: 100%; max-height: 50vh; border-radius: 8px; object-fit: contain; background: #f0f2f5; }
+
+/* ---------- Glas op de telefoon (webapp); in de Android-app tekent Android zelf het glas ---------- */
+@media (max-width: 720px) {
+  :root { --glass-bg: rgba(248, 249, 251, .68); --glass-line: rgba(255, 255, 255, .7); --glass-shine: rgba(255, 255, 255, .85); --glass-shadow: 0 18px 50px rgba(15, 30, 50, .22), 0 2px 8px rgba(15, 30, 50, .08); }
+  html[data-mode="dark"] { --glass-bg: rgba(38, 41, 46, .62); --glass-line: rgba(255, 255, 255, .12); --glass-shine: rgba(255, 255, 255, .14); --glass-shadow: 0 18px 50px rgba(0, 0, 0, .5); }
+  .menu, .sheet, .emo-pop, .dialog, html:not(.native):not([data-mtheme]) .mnav-pill {
+    background: var(--glass-bg) !important;
+    -webkit-backdrop-filter: blur(26px) saturate(190%); backdrop-filter: blur(26px) saturate(190%);
+    border: 1px solid var(--glass-line) !important;
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-shine) !important;
+  }
+  .menu { border-radius: 22px; padding: 8px; animation: glass-in .32s cubic-bezier(.2, 1.35, .35, 1); transform-origin: bottom center; }
+  .menu .mi { border-radius: 14px; }
+  .menu .mi:hover, .menu .mi:active { background: rgba(127, 140, 160, .16) !important; }
+  .menu .sep { background: rgba(127, 140, 160, .25); border: 0; margin: 6px 12px; }
+  .emo-pop { border-radius: 22px; padding: 6px !important; animation: glass-in .3s cubic-bezier(.2, 1.35, .35, 1); }
+  .emo-grid { grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .emo-grid button { width: auto; height: 40px; font-size: 24px; border-radius: 12px; }
+  .emo-grid button img { height: 30px; max-width: 34px; }
+  .sheet { border-radius: 26px 26px 0 0; border-bottom: 0 !important; animation: sheet-up .34s cubic-bezier(.2, 1.15, .35, 1); }
+  .sheet-reacts button { background: rgba(127, 140, 160, .16); transition: transform .15s; }
+  .sheet-reacts button:active { transform: scale(1.25); }
+  .sheet-item:active { background: rgba(127, 140, 160, .16) !important; }
+  .dialog { border-radius: 26px 26px 0 0; animation: sheet-up .34s cubic-bezier(.2, 1.15, .35, 1); }
+  .dialog .dbody, .dialog .dfoot { background: transparent !important; }
+  html:not(.native):not([data-mtheme]) .mnav-pill { border-radius: 30px; }
+  html:not(.native):not([data-mtheme]) .mnav-pill button.on { background: rgba(10, 147, 209, .14); }
+  html:not(.native):not([data-mtheme]) .mnav-add {
+    background: rgba(10, 147, 209, .82); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, .45); box-shadow: 0 10px 30px rgba(0, 120, 180, .35), inset 0 1px 0 rgba(255, 255, 255, .5);
+  }
+  .sheet-back, .overlay { background: rgba(0, 0, 0, .22); }
+}
+@keyframes glass-in { from { opacity: 0; transform: scale(.86) translateY(8px); } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+
+/* ---------- Eigen videospeler ---------- */
+.vplayer { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #000; }
+.vplayer video { width: 100%; height: 100%; object-fit: contain; }
+.vp-big { position: absolute; left: 50%; top: 50%; width: 78px; height: 78px; margin: -39px 0 0 -39px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); color: #fff; display: flex; align-items: center; justify-content: center; transition: opacity .2s, transform .2s; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.vp-big svg { width: 42px; height: 42px; fill: currentColor; margin-left: 4px; }
+.vplayer:not(.paused) .vp-big { opacity: 0; transform: scale(.8); pointer-events: none; }
+.vp-controls {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px;
+  padding: 26px 14px calc(14px + var(--sab, env(safe-area-inset-bottom))); color: #fff;
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, .65)); transition: opacity .25s;
+}
+.vplayer:not(.show):not(.paused) .vp-controls { opacity: 0; pointer-events: none; }
+.vp-btn { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: none; color: #fff; display: flex; align-items: center; justify-content: center; }
+.vp-btn svg { width: 24px; height: 24px; fill: currentColor; }
+.vp-time { font-size: 12.5px; font-variant-numeric: tabular-nums; opacity: .9; min-width: 34px; text-align: center; }
+.vp-bar {
+  flex: 1; height: 4px; -webkit-appearance: none; appearance: none; border-radius: 2px; cursor: pointer;
+  background: linear-gradient(90deg, #fff 0 var(--played, 0%), rgba(255, 255, 255, .45) var(--played, 0%) var(--buffered, 0%), rgba(255, 255, 255, .2) var(--buffered, 0%));
+}
+.vp-bar::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.vp-bar::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
+.vp-spin { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: vp-spin .8s linear infinite; }
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+.gallery .vplayer .vp-controls { padding-bottom: calc(18px + var(--sab, env(safe-area-inset-bottom))); }
+
+/* Naar rechts vegen om te antwoorden: een pijltje verschijnt links van het bericht. */
+@media (max-width: 720px) {
+  .msg { position: relative; }
+  .msg.swipe-ready::before {
+    content: '↩'; position: absolute; left: -34px; top: 50%; width: 26px; height: 26px; margin-top: -13px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 14px; color: #fff; background: var(--m-blue); animation: glass-in .15s ease-out;
+  }
+}

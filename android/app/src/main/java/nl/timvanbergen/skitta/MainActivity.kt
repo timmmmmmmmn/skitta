@@ -203,7 +203,7 @@ class MainActivity : ComponentActivity() {
         // Alleen in testbuilds (tegen wrangler dev) de WebView te inspecteren.
         if (BuildConfig.SITE.startsWith("http://")) WebView.setWebContentsDebuggingEnabled(true)
         val root = FrameLayout(this)
-        web = WebView(this)
+        web = SkittaWebView(this) { uri, mime -> pasteFromKeyboard(uri, mime) }
         root.addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -268,6 +268,14 @@ class MainActivity : ComponentActivity() {
         if (c == 0L || !pageReady) return
         pendingConv = 0L
         web.evaluateJavascript("window.skittaOpen && skittaOpen($c)", null)
+    }
+
+    /** Afbeelding van het toetsenbord: lezen (zolang we toestemming hebben) en aan de pagina geven. */
+    private fun pasteFromKeyboard(uri: Uri, mime: String) {
+        val bytes = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return
+        if (bytes.size > 40 * 1024 * 1024) return
+        val data = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        web.evaluateJavascript("window.skittaPasteImage && skittaPasteImage(${JSONObject.quote(data)}, ${JSONObject.quote(mime)})", null)
     }
 
     private fun pushInsets() {
@@ -375,6 +383,9 @@ class MainActivity : ComponentActivity() {
         inFront = true
         SkittaService.start(this)
         // Meldingen verdwijnen per gesprek zodra je het leest (hier, of op een ander apparaat).
+        // Contactverzoeken zie je in de app; die meldingen mogen weg.
+        (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).activeNotifications
+            .filter { it.id >= 2_000_000 }.forEach { (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(it.id) }
         Updater.resume(this)
         Updater.checkQuietly(this)
     }
@@ -541,6 +552,12 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun videoChunk(id: String, base64: String) {
             videoFile(id).appendBytes(Base64.decode(base64, Base64.DEFAULT))
+        }
+
+        /** Grote video: meteen streamen in de eigen speler (geen omweg via de pagina). */
+        @JavascriptInterface
+        fun videoStream(url: String, token: String, key: String, size: String, mime: String, title: String) {
+            runOnUiThread { VideoActivity.stream(this@MainActivity, url, token, key, size.toLongOrNull() ?: 0L, mime, title) }
         }
 
         @JavascriptInterface

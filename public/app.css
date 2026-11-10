@@ -120,7 +120,7 @@ textarea.field { height: auto; resize: vertical; }
   padding: 6vh 16px 32px;
 }
 .auth-box { width: 300px; display: flex; flex-direction: column; align-items: center; }
-.auth-logo { width: 116px; height: 116px; mix-blend-mode: multiply; margin-bottom: -6px; }
+.auth-logo { width: 116px; height: 116px; margin-bottom: -6px; }
 .auth-word { font-size: 30px; font-weight: 600; color: var(--blue); letter-spacing: -.5px; margin-bottom: 18px; text-shadow: 0 1px 0 #fff; }
 .auth-form { width: 100%; display: flex; flex-direction: column; }
 .auth-form h2 { margin: 0 0 8px; font-size: 16px; font-weight: 400; color: #1b6a96; }
@@ -450,10 +450,14 @@ textarea.field { height: auto; resize: vertical; }
 .results .res .grow div:last-child { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
 .profile-top .grow { flex: 1; min-width: 0; }
+.profile-photo { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.sound-tests { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+.sound-tests .btn { min-width: 0; }
 .profile-top .nm { font-size: 18px; }
 .opt-group { border: 1px solid #d5dfe5; border-radius: 3px; padding: 8px 10px 4px; margin: 0 0 12px; }
 .opt-group legend { padding: 0 4px; color: #1e3287; }
 .opt-group label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.opt-group label input[type="range"] { flex: 1; }
 .emo-grid { display: grid; grid-template-columns: repeat(10, 30px); gap: 1px; padding: 4px; }
 .emo-grid button { width: 30px; height: 30px; border: 1px solid transparent; border-radius: 3px; background: none; font-size: 19px; line-height: 1; padding: 0; }
 .emo-grid button:hover { border-color: #aecff7; background: linear-gradient(#f2f7fd, #dbeafd); }
@@ -516,7 +520,15 @@ body:has(#incoming) .toasts { bottom: 190px; }
 .att video.photo { cursor: default; background: #000; }
 .att-voice { display: inline-flex; align-items: center; gap: 6px; }
 .att-voice svg { width: 16px; height: 16px; fill: #00a3e4; }
-.att-voice audio { height: 32px; max-width: 260px; }
+.att-voice { display: inline-flex; align-items: center; gap: 8px; width: 240px; max-width: 100%; padding: 2px 0; }
+.vo-play { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 0; background: #0896d2; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.vo-play svg { width: 16px; height: 16px; fill: #fff; }
+.vo-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.vo-bar { position: relative; height: 16px; cursor: pointer; touch-action: none; }
+.vo-bar::before { content: ""; position: absolute; left: 0; right: 0; top: 7px; height: 3px; border-radius: 2px; background: rgba(120, 140, 160, .35); }
+.vo-fill { position: absolute; left: 0; top: 7px; height: 3px; border-radius: 2px; background: #0896d2; width: 0; }
+.vo-knob { position: absolute; top: 3px; width: 11px; height: 11px; margin-left: -5px; border-radius: 50%; background: #0896d2; left: 0; }
+.vo-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .att-file { display: inline-flex; gap: 8px; align-items: center; padding: 6px 10px 6px 6px; border: 1px solid #c9dce8; border-radius: 4px; background: linear-gradient(#fff, #eef6fb); color: inherit !important; text-decoration: none !important; max-width: 320px; }
 .att-file:hover { border-color: #84c8ef; }
 .att-ico { width: 34px; height: 40px; flex: none; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 5px; border-radius: 2px 9px 2px 2px; background: linear-gradient(#5bd0fb, #0294d1); color: #fff; font-size: 8px; font-weight: 700; }
@@ -581,3 +593,7 @@ mark { background: #ffe25c; color: inherit; border-radius: 2px; }
 .stage .bar .cbtn.on { background: linear-gradient(#5bd0fb, #0294d1); border-color: #0a86c0; }
 .stage video.local.screen { transform: none; }
 .safety { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 10px 0 14px; padding: 12px; background: #f3f9fd; border: 1px solid #cfe2ee; border-radius: 6px; font: 18px/1.3 ui-monospace, Menlo, Consolas, monospace; text-align: center; letter-spacing: 1px; }
+.emo.anim { height: 22px; width: auto; vertical-align: -5px; }
+.msg .text.big-emo .emo.anim { height: 52px; vertical-align: middle; }
+.emo-grid button img { height: 24px; width: auto; max-width: 28px; object-fit: contain; }
+.toast .emo.anim { height: 16px; }

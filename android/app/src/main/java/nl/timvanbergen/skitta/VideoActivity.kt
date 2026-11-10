@@ -36,8 +36,10 @@ class VideoActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        val path = intent.getStringExtra("path") ?: return finish()
-        file = File(path)
+        val path = intent.getStringExtra("path")
+        val streamUrl = intent.getStringExtra("url")
+        if (path == null && streamUrl == null) return finish()
+        file = path?.let { File(it) }
         val view = PlayerView(this).apply {
             setShowNextButton(false)
             setShowPreviousButton(false)
@@ -50,7 +52,17 @@ class VideoActivity : ComponentActivity() {
         }
         setContentView(view)
         val exo = ExoPlayer.Builder(this).build()
-        exo.setMediaItem(MediaItem.Builder().setUri(Uri.fromFile(file)).setMimeType(intent.getStringExtra("mime")).build())
+        if (streamUrl != null) {
+            // Streamen: stukken ophalen en ontsleutelen terwijl je kijkt.
+            val key = android.util.Base64.decode(intent.getStringExtra("key"), android.util.Base64.DEFAULT)
+            val factory = EncryptedVideoSource.Factory(streamUrl, intent.getStringExtra("token") ?: "", key, intent.getLongExtra("size", 0L))
+            exo.setMediaSource(
+                androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(factory)
+                    .createMediaSource(MediaItem.Builder().setUri(Uri.parse("skitta://video")).setMimeType(intent.getStringExtra("mime")).build())
+            )
+        } else {
+            exo.setMediaItem(MediaItem.Builder().setUri(Uri.fromFile(file)).setMimeType(intent.getStringExtra("mime")).build())
+        }
         exo.playWhenReady = true
         exo.prepare()
         view.player = exo
@@ -72,6 +84,15 @@ class VideoActivity : ComponentActivity() {
 
     companion object {
         fun dir(context: Context) = File(context.cacheDir, "video").apply { mkdirs() }
+
+        @androidx.annotation.OptIn(UnstableApi::class)
+        fun stream(context: Context, url: String, token: String, key: String, size: Long, mime: String, title: String) {
+            context.startActivity(
+                Intent(context, VideoActivity::class.java)
+                    .putExtra("url", url).putExtra("token", token).putExtra("key", key).putExtra("size", size)
+                    .putExtra("mime", mime).putExtra("title", title)
+            )
+        }
 
         @androidx.annotation.OptIn(UnstableApi::class)
         fun start(context: Context, file: File, mime: String, title: String) {
