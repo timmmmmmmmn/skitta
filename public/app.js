@@ -3101,6 +3101,7 @@ function buildMenubar() {
     ]],
     ['Help', () => [
       { label: 'Sneltoetsen', run: shortcutsDialog },
+      Native.api?.checkForUpdate && { label: `Controleren op updates (${Native.api.appVersion?.() || '?'})`, run: () => Native.api.checkForUpdate() },
       { label: 'Over Skitta', run: aboutDialog }
     ]]
   ];

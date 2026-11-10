@@ -7,6 +7,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod achtergrond;
+mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,7 +22,11 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use wry::{WebContext, WebView, WebViewBuilder};
 
-pub const SITE: &str = "https://skitta.timvanbergen.nl";
+// SKITTA_SITE alleen om te testen tegen `wrangler dev`.
+pub const SITE: &str = match option_env!("SKITTA_SITE") {
+    Some(s) => s,
+    None => "https://skitta.timvanbergen.nl",
+};
 const SLEEP_AFTER: Duration = Duration::from_secs(60);
 
 pub enum UserEvent {
@@ -29,6 +34,10 @@ pub enum UserEvent {
     Tray(TrayIconEvent),
     Menu(MenuEvent),
     Notify { title: String, body: String, call: bool },
+    /// Uitkomst van een updatecontrole; `true` = handmatig gevraagd (dan ook "geen update" melden).
+    Update(Option<updater::Update>, bool),
+    UpdateReady(PathBuf),
+    UpdateFailed(String),
 }
 
 // Wat de pagina van de app kan vragen (zelfde vorm als in de Android-app).
@@ -38,6 +47,8 @@ window.SkittaNative = {
   notify: (title, body, c, kind) => window.ipc.postMessage(JSON.stringify({ t: 'notify', title, body, c: Number(c) || 0, kind })),
   badge: (n) => window.ipc.postMessage(JSON.stringify({ t: 'badge', n: Number(n) || 0 })),
   ready: () => window.ipc.postMessage('{"t":"ready"}'),
+  appVersion: () => '{VERSION}',
+  checkForUpdate: () => window.ipc.postMessage('{"t":"checkUpdate"}'),
   signedOut: () => window.ipc.postMessage('{"t":"signedOut"}')
 };
 "#;
@@ -82,6 +93,8 @@ struct App {
     background: Option<Arc<AtomicBool>>,
     tray: Option<TrayIcon>,
     unread: u32,
+    /// Versies waarvoor al "Later" is gekozen: daar niet opnieuw over zeuren (tot de volgende start).
+    skipped: Vec<String>,
 }
 
 impl App {
@@ -93,7 +106,7 @@ impl App {
         let downloads = downloads_dir();
         let builder = WebViewBuilder::new_with_web_context(&mut self.context)
             .with_url(SITE)
-            .with_initialization_script(BRIDGE)
+            .with_initialization_script(BRIDGE.replace("{VERSION}", updater::VERSION))
             .with_ipc_handler(move |req| {
                 let _ = proxy.send_event(UserEvent::Ipc(req.body().clone()));
             })
@@ -168,6 +181,7 @@ impl App {
             }
             Some("badge") => self.set_unread(v["n"].as_u64().unwrap_or(0) as u32),
             Some("signedOut") => self.stop_background(),
+            Some("checkUpdate") => updater::check_now(self.proxy.clone()),
             _ => {}
         }
     }
@@ -215,6 +229,7 @@ fn make_tray() -> Option<TrayIcon> {
     let menu = Menu::new();
     let _ = menu.append_items(&[
         &MenuItem::with_id("open", "Skitta openen", true, None),
+        &MenuItem::with_id("update", "Controleren op updates…", true, None),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id("quit", "Skitta afsluiten", true, None),
     ]);
@@ -231,8 +246,10 @@ fn main() {
     #[cfg(target_os = "macos")]
     let _ = notify_rust::set_application("nl.timvanbergen.skitta");
 
+    updater::cleanup();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    updater::watch(proxy.clone());
     {
         let p = proxy.clone();
         TrayIconEvent::set_event_handler(Some(move |e| {
@@ -262,6 +279,7 @@ fn main() {
         background: None,
         tray: None,
         unread: 0,
+        skipped: Vec::new(),
     };
     app.build_webview();
 
@@ -288,10 +306,32 @@ fn main() {
                 play_sound(call);
                 notify(&title, &body);
             }
+            Event::UserEvent(UserEvent::Update(Some(u), manual)) => {
+                if manual || !app.skipped.contains(&u.version) {
+                    if updater::ask(&u) {
+                        updater::download(u, app.proxy.clone());
+                    } else {
+                        app.skipped.push(u.version);
+                    }
+                }
+            }
+            Event::UserEvent(UserEvent::Update(None, _)) => {
+                updater::info("Skitta is bijgewerkt", &format!("Je hebt de nieuwste versie ({}).", updater::VERSION));
+            }
+            Event::UserEvent(UserEvent::UpdateReady(path)) => match updater::finish(&path) {
+                Ok(()) => {
+                    app.stop_background();
+                    app.webview = None;
+                    *flow = ControlFlow::Exit;
+                }
+                Err(e) => updater::info("Bijwerken lukte niet", &e),
+            },
+            Event::UserEvent(UserEvent::UpdateFailed(e)) => updater::info("Skitta bijwerken", &e),
             Event::UserEvent(UserEvent::Tray(TrayIconEvent::Click { button: MouseButton::Left, .. })) => app.show(),
             Event::UserEvent(UserEvent::Tray(TrayIconEvent::DoubleClick { .. })) => app.show(),
             Event::UserEvent(UserEvent::Menu(e)) => match e.id.0.as_str() {
                 "open" => app.show(),
+                "update" => updater::check_now(app.proxy.clone()),
                 "quit" => {
                     app.stop_background();
                     app.webview = None;
