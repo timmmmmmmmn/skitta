@@ -8,6 +8,7 @@ import {
 import { Hub, effectivePresence } from './hub.js';
 import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport } from './limits.js';
 import { pushTo, vapidPublicKey } from './push.js';
+import { BIG, uploadTicket, downloadTicket } from './bigfiles.js';
 
 export { Hub };
 
@@ -195,10 +196,10 @@ async function upgradeMe(env, user, request) {
   return json({ ok: true });
 }
 
-function meOut(user, announcement) {
+function meOut(env, user, announcement) {
   return {
     ...publicUser(user), email: user.email, presence_pref: user.presence, is_admin: !!user.is_admin,
-    announcement, kdf_v: user.kdf_v, kdf_salt: user.kdf_salt, pubkey: user.pubkey, enc_privkey: user.enc_privkey
+    announcement, read_receipts: !!user.read_receipts, big_files: env.FILES_URL && env.FILES_SECRET ? BIG.min : 0, kdf_v: user.kdf_v, kdf_salt: user.kdf_salt, pubkey: user.pubkey, enc_privkey: user.enc_privkey
   };
 }
 
@@ -223,6 +224,7 @@ async function updateMe(env, user, request) {
     if (!PRESENCES.includes(b.presence)) throw new HttpError(400, 'Onbekende status');
     sets.push('presence = ?'); vals.push(b.presence);
   }
+  if ('read_receipts' in b) { sets.push('read_receipts = ?'); vals.push(b.read_receipts ? 1 : 0); }
   if (!sets.length) return json({ ok: true });
   await env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, user.id).run();
   if ('presence' in b) await hub(env).presenceChanged(user.id);
@@ -388,7 +390,10 @@ function later(env, promise) {
 }
 
 async function pushMessage(env, user, conv, m) {
-  const others = (await activeMemberIds(env, conv.id)).filter((id) => id !== user.id);
+  const { results } = await env.DB.prepare(
+    'SELECT user_id FROM members WHERE conversation_id = ? AND left_at IS NULL AND user_id != ? AND muted_until < ?'
+  ).bind(conv.id, user.id, now()).all();
+  const others = results.map((r) => r.user_id);
   const title = conv.kind === 'group' ? `${user.display_name} in ${conv.topic || 'een groep'}` : user.display_name;
   const body = m.kind === 'call' ? 'Gemiste oproep' : m.kind === 'photo' ? 'Heeft een bijlage gestuurd' : 'Nieuw bericht';
   if (m.kind === 'call' && !JSON.parse(m.body || '{}').missed) return;
@@ -547,16 +552,20 @@ function msgOut(m) {
     id: m.id, c: m.conversation_id, u: m.sender_id, k: m.kind, b: gone ? '' : m.body,
     media: gone ? null : m.media_id, w: m.width || null, h: m.height || null,
     at: m.created_at, ed: m.edited_at || null, del: !!m.deleted_at, rm: !!m.removed, cid: m.client_id || null,
-    e: m.enc && !gone ? 1 : 0
+    e: m.enc && !gone ? 1 : 0, x: m.expires_at || null,
+    re: gone || !m.reacts ? [] : JSON.parse(m.reacts)
   };
 }
 
-const MSG_COLS = 'm.*, x.width, x.height';
+const MSG_COLS = `m.*, x.width, x.height,
+  (SELECT json_group_array(json_object('u', r.user_id, 'b', r.body)) FROM reactions r WHERE r.message_id = m.id) AS reacts`;
+const EXPIRES = [0, 300, 3600, 28800, 86400, 604800, 2419200];
 const MSG_FROM = 'messages m LEFT JOIN media x ON x.id = m.media_id';
 
 async function conversationsFor(env, user, onlyId) {
   const { results: convs } = await env.DB.prepare(
-    `SELECT c.id, c.kind, c.topic, c.created_by, c.created_at, c.last_at, c.key_version, c.rotate, m.left_at, m.last_read,
+    `SELECT c.id, c.kind, c.topic, c.created_by, c.created_at, c.last_at, c.key_version, c.rotate, c.expire,
+            m.left_at, m.last_read, m.muted_until, m.pinned, m.archived,
             (SELECT COUNT(*) FROM messages z WHERE z.conversation_id = c.id AND z.id > m.last_read
                AND (z.sender_id IS NULL OR z.sender_id != ?) AND z.kind != 'system' AND z.deleted_at IS NULL) AS unread
        FROM members m JOIN conversations c ON c.id = m.conversation_id
@@ -568,7 +577,7 @@ async function conversationsFor(env, user, onlyId) {
   const marks = ids.map(() => '?').join(',');
   const [members, lasts, keyed] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.pubkey
+      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.pubkey, u.read_receipts
          FROM members m JOIN users u ON u.id = m.user_id WHERE m.conversation_id IN (${marks})`
     ).bind(...ids),
     env.DB.prepare(
@@ -586,12 +595,15 @@ async function conversationsFor(env, user, onlyId) {
   const hasKey = new Set(keyed.results.map((r) => `${r.conversation_id}:${r.user_id}`));
   const byConv = new Map(ids.map((id) => [id, []]));
   for (const m of members.results) {
-    byConv.get(m.conversation_id).push({ ...publicUser(m), pubkey: m.pubkey || null, left: !!m.left_at, read: m.last_read });
+    // Leesbevestigingen zijn wederzijds: staat iemand ze uit, dan ziet niemand die van een ander.
+    const read = m.id === user.id || (m.read_receipts && user.read_receipts) ? m.last_read : 0;
+    byConv.get(m.conversation_id).push({ ...publicUser(m), pubkey: m.pubkey || null, left: !!m.left_at, read });
   }
   const last = new Map(lasts.results.map((m) => [m.conversation_id, msgOut(m)]));
   return convs.map((c) => ({
     id: c.id, kind: c.kind, topic: c.topic, created_by: c.created_by, last_at: c.last_at,
     left: !!c.left_at, last_read: c.last_read, unread: c.unread, key_version: c.key_version, rotate: !!c.rotate,
+    expire: c.expire, muted_until: c.muted_until, pinned: !!c.pinned, archived: !!c.archived,
     members: byConv.get(c.id), last: last.get(c.id) || null,
     missing: c.key_version ? byConv.get(c.id).filter((m) => !m.left && m.pubkey && !hasKey.has(`${c.id}:${m.id}`)).map((m) => m.id) : []
   }));
@@ -769,12 +781,14 @@ async function listMessages(env, user, convId, url) {
   const before = Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER;
   const after = Number(url.searchParams.get('after')) || 0;
   const until = conv.left_at ? `AND m.created_at <= ${Number(conv.left_at)}` : '';
+  const filter = `AND (m.expires_at IS NULL OR m.expires_at > ${now()})
+    AND m.id NOT IN (SELECT message_id FROM hidden WHERE user_id = ${Number(user.id)})`;
   const { results } = after
     ? await env.DB.prepare(
-      `SELECT ${MSG_COLS} FROM ${MSG_FROM} WHERE m.conversation_id = ? AND m.id > ? ${until} ORDER BY m.id LIMIT 500`
+      `SELECT ${MSG_COLS} FROM ${MSG_FROM} WHERE m.conversation_id = ? AND m.id > ? ${until} ${filter} ORDER BY m.id LIMIT 500`
     ).bind(convId, after).all()
     : await env.DB.prepare(
-      `SELECT ${MSG_COLS} FROM ${MSG_FROM} WHERE m.conversation_id = ? AND m.id < ? ${until} ORDER BY m.id DESC LIMIT ${PAGE}`
+      `SELECT ${MSG_COLS} FROM ${MSG_FROM} WHERE m.conversation_id = ? AND m.id < ? ${until} ${filter} ORDER BY m.id DESC LIMIT ${PAGE}`
     ).bind(convId, before).all();
   const list = after ? results : results.reverse();
   return json({ messages: list.map(msgOut), more: !after && results.length === PAGE });
@@ -808,8 +822,8 @@ async function sendMessage(env, user, convId, request) {
   const cid = str(b.client_id, 40) || null;
   const [res] = await env.DB.batch([
     env.DB.prepare(
-      'INSERT INTO messages (conversation_id, sender_id, kind, body, client_id, created_at, enc) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *'
-    ).bind(convId, user.id, kind, text, cid, t, enc),
+      'INSERT INTO messages (conversation_id, sender_id, kind, body, client_id, created_at, enc, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *'
+    ).bind(convId, user.id, kind, text, cid, t, enc, conv.expire && kind !== 'call' ? t + conv.expire * 1000 : null),
     env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId),
     env.DB.prepare('UPDATE members SET last_read = (SELECT MAX(id) FROM messages WHERE conversation_id = ?) WHERE conversation_id = ? AND user_id = ?').bind(convId, convId, user.id)
   ]);
@@ -836,8 +850,8 @@ async function sendPhoto(env, user, convId, request, url) {
   const [, res] = await env.DB.batch([
     mediaInsert(env, id, user.id, convId, img, w, h),
     env.DB.prepare(
-      "INSERT INTO messages (conversation_id, sender_id, kind, body, media_id, client_id, created_at, enc) VALUES (?, ?, 'photo', ?, ?, ?, ?, ?) RETURNING *"
-    ).bind(convId, user.id, caption, id, cid, t, enc),
+      "INSERT INTO messages (conversation_id, sender_id, kind, body, media_id, client_id, created_at, enc, expires_at) VALUES (?, ?, 'photo', ?, ?, ?, ?, ?, ?) RETURNING *"
+    ).bind(convId, user.id, caption, id, cid, t, enc, conv.expire ? t + conv.expire * 1000 : null),
     env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId),
     env.DB.prepare('UPDATE members SET last_read = (SELECT MAX(id) FROM messages WHERE conversation_id = ?) WHERE conversation_id = ? AND user_id = ?').bind(convId, convId, user.id)
   ]);
@@ -897,12 +911,120 @@ async function deleteMessage(env, user, id) {
   return json(out);
 }
 
+async function broadcastMessage(env, id) {
+  const m = await env.DB.prepare(`SELECT ${MSG_COLS} FROM ${MSG_FROM} WHERE m.id = ?`).bind(id).first();
+  if (m) await hub(env).notify(await activeMemberIds(env, m.conversation_id), { t: 'msg', m: msgOut(m) });
+  return m;
+}
+
+// Reactie zetten of weghalen (lege body). De emoji zit versleuteld in een envelop.
+async function react(env, user, id, request) {
+  const m = await env.DB.prepare('SELECT conversation_id, deleted_at, removed, kind FROM messages WHERE id = ?').bind(id).first();
+  if (!m || m.deleted_at || m.removed || m.kind === 'system') throw new HttpError(404, 'Bericht niet gevonden');
+  const conv = await memberOf(env, user, m.conversation_id);
+  const b = await body(request);
+  if (!b.body) {
+    await env.DB.prepare('DELETE FROM reactions WHERE message_id = ? AND user_id = ?').bind(id, user.id).run();
+  } else {
+    const env_ = checkEnvelope(b.body, conv);
+    await env.DB.prepare(
+      'INSERT INTO reactions (message_id, user_id, body, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET body = excluded.body, created_at = excluded.created_at'
+    ).bind(id, user.id, env_, now()).run();
+  }
+  return json(msgOut(await broadcastMessage(env, id)));
+}
+
+async function hideMessage(env, user, id) {
+  const m = await env.DB.prepare('SELECT conversation_id FROM messages WHERE id = ?').bind(id).first();
+  if (!m) throw new HttpError(404, 'Bericht niet gevonden');
+  await memberOf(env, user, m.conversation_id, false);
+  await env.DB.prepare('INSERT INTO hidden (user_id, message_id) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(user.id, id).run();
+  return json({ ok: true });
+}
+
+// Dempen, vastpinnen en archiveren (alleen voor jezelf).
+async function myConvSettings(env, user, convId, request) {
+  await memberOf(env, user, convId, false);
+  const b = await body(request);
+  const sets = [];
+  const vals = [];
+  if ('muted_until' in b) { sets.push('muted_until = ?'); vals.push(Math.max(0, Number(b.muted_until) || 0)); }
+  if ('pinned' in b) { sets.push('pinned = ?'); vals.push(b.pinned ? 1 : 0); }
+  if ('archived' in b) { sets.push('archived = ?'); vals.push(b.archived ? 1 : 0); }
+  if (sets.length) await env.DB.prepare(`UPDATE members SET ${sets.join(', ')} WHERE conversation_id = ? AND user_id = ?`).bind(...vals, convId, user.id).run();
+  await hub(env).notify([user.id], { t: 'conv', c: convId });
+  return json({ ok: true });
+}
+
+// Verdwijnende berichten voor het hele gesprek.
+async function setExpire(env, user, convId, request) {
+  await memberOf(env, user, convId);
+  const b = await body(request);
+  const expire = Number(b.expire) || 0;
+  if (!EXPIRES.includes(expire)) throw new HttpError(400, 'Ongeldige tijd');
+  await env.DB.batch([
+    env.DB.prepare('UPDATE conversations SET expire = ?, last_at = ? WHERE id = ?').bind(expire, now(), convId),
+    systemMessage(env, convId, user.id, { e: 'expire', s: expire })
+  ]);
+  await broadcastLatest(env, convId);
+  await hub(env).notify(await activeMemberIds(env, convId), { t: 'conv', c: convId });
+  return json({ ok: true });
+}
+
+// Cron: verlopen berichten en hun bijlagen echt verwijderen, oude pogingen opruimen.
+async function cleanupExpired(env) {
+  const { results } = await env.DB.prepare('SELECT id, media_id FROM messages WHERE expires_at IS NOT NULL AND expires_at < ? LIMIT 500').bind(now()).all();
+  if (results.length) {
+    await mediaDelete(env, results.map((r) => r.media_id).filter(Boolean));
+    const marks = results.map(() => '?').join(',');
+    await env.DB.prepare(`DELETE FROM messages WHERE id IN (${marks})`).bind(...results.map((r) => r.id)).run();
+  }
+  await env.DB.prepare('DELETE FROM attempts WHERE at < ?').bind(now() - 86400e3).run();
+  await env.DB.prepare('DELETE FROM bigfiles WHERE expires_at < ?').bind(now() - 86400e3).run();
+}
+
+// Groot bestand: eerst een upload-ticket, daarna (na het uploaden) het bericht met de versleutelde beschrijving.
+async function bigTicket(env, user, convId, request) {
+  const conv = await memberOf(env, user, convId);
+  await canMessage(env, user, conv);
+  const b = await body(request);
+  const day = new Date().toISOString().slice(0, 10);
+  const row = await env.DB.prepare('SELECT n FROM usage WHERE key = ?').bind(`big:${user.id}:${day}`).first();
+  const ticket = await uploadTicket(env, user, conv, Number(b.size), row?.n || 0);
+  await env.DB.prepare('INSERT INTO usage (key, n) VALUES (?, ?) ON CONFLICT DO UPDATE SET n = n + excluded.n').bind(`big:${user.id}:${day}`, Number(b.size)).run();
+  return json(ticket);
+}
+
+async function sendBig(env, user, convId, request) {
+  const conv = await memberOf(env, user, convId);
+  await canMessage(env, user, conv);
+  const b = await body(request);
+  const file = await env.DB.prepare('SELECT id FROM bigfiles WHERE id = ? AND conversation_id = ? AND owner_id = ?').bind(str(b.file, 40), convId, user.id).first();
+  if (!file) throw new HttpError(404, 'Bestand niet gevonden');
+  const text = checkEnvelope(b.body, conv);
+  const t = now();
+  const [res] = await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO messages (conversation_id, sender_id, kind, body, client_id, created_at, enc, expires_at) VALUES (?, ?, 'photo', ?, ?, ?, 1, ?) RETURNING *"
+    ).bind(convId, user.id, text, str(b.client_id, 40) || null, t, conv.expire ? t + conv.expire * 1000 : null),
+    env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId)
+  ]);
+  const m = msgOut(res.results[0]);
+  await hub(env).notify(await activeMemberIds(env, convId), { t: 'msg', m });
+  later(env, pushMessage(env, user, conv, res.results[0]));
+  return json(m, 201);
+}
+
 async function markRead(env, user, convId, request) {
   await memberOf(env, user, convId, false);
   const b = await body(request);
   const upto = Number(b.id) || 0;
   await env.DB.prepare('UPDATE members SET last_read = MAX(last_read, ?) WHERE conversation_id = ? AND user_id = ?').bind(upto, convId, user.id).run();
-  await hub(env).notify(await activeMemberIds(env, convId), { t: 'read', c: convId, u: user.id, id: upto });
+  if (user.read_receipts) {
+    await hub(env).notify(await activeMemberIds(env, convId), { t: 'read', c: convId, u: user.id, id: upto });
+  } else {
+    await hub(env).notify([user.id], { t: 'read', c: convId, u: user.id, id: upto });
+  }
   return json({ ok: true });
 }
 
@@ -1191,7 +1313,7 @@ async function route(request, env, url) {
   }
 
   if (a === 'me') {
-    if (!b && m === 'GET') return json(meOut(user, await setting(env, 'announcement', '')));
+    if (!b && m === 'GET') return json(meOut(env, user, await setting(env, 'announcement', '')));
     if (!b && m === 'PATCH') return updateMe(env, user, request);
     if (b === 'password' && m === 'POST') return changePassword(env, user, request);
     if (b === 'upgrade' && m === 'POST') return upgradeMe(env, user, request);
@@ -1202,6 +1324,7 @@ async function route(request, env, url) {
   if (a === 'ice' && m === 'GET') return iceServers(env);
   if (p === 'usage/turn' && m === 'POST') return reportTurn(env, user, request);
   if (p === 'push/key' && m === 'GET') return json({ key: await vapidPublicKey(env) });
+  if (a === 'big' && b && m === 'GET') return json(await downloadTicket(env, user, b));
   if (p === 'push' && m === 'POST') return pushSubscribe(env, user, request);
   if (p === 'push' && m === 'DELETE') return pushUnsubscribe(env, user, request);
   if (a === 'keys' && m === 'GET') return listKeys(env, user, url);
@@ -1226,6 +1349,10 @@ async function route(request, env, url) {
     if (id && c === 'photo' && m === 'POST') return sendPhoto(env, user, id, request, url);
     if (id && c === 'read' && m === 'POST') return markRead(env, user, id, request);
     if (id && c === 'keys' && m === 'POST') return putKeys(env, user, id, request);
+    if (id && c === 'me' && m === 'PATCH') return myConvSettings(env, user, id, request);
+    if (id && c === 'big' && m === 'POST') return bigTicket(env, user, id, request);
+    if (id && c === 'bigmsg' && m === 'POST') return sendBig(env, user, id, request);
+    if (id && c === 'expire' && m === 'PATCH') return setExpire(env, user, id, request);
     if (id && c === 'members' && !d && m === 'POST') return addMembers(env, user, id, request);
     if (id && c === 'members' && d === 'me' && m === 'DELETE') return leaveConversation(env, user, id);
   }
@@ -1235,6 +1362,8 @@ async function route(request, env, url) {
     if (!c && m === 'DELETE') return deleteMessage(env, user, id);
     if (c === 'report' && m === 'POST') return reportMessage(env, user, id, request);
     if (c === 'encrypt' && m === 'PUT') return encryptOldMessage(env, user, id, request);
+    if (c === 'reaction' && m === 'PUT') return react(env, user, id, request);
+    if (c === 'hide' && m === 'POST') return hideMessage(env, user, id);
   }
 
   if (a === 'admin') {
@@ -1274,5 +1403,9 @@ export default {
       }
     }
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanupExpired(env));
   }
 };

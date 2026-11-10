@@ -88,6 +88,58 @@ class MainActivity : ComponentActivity() {
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
+    // ---- Privacy: schermbeveiliging en schermvergrendeling ----
+    private fun prefs() = getSharedPreferences("skitta", Context.MODE_PRIVATE)
+    private var cover: View? = null
+    private var stoppedAt = 0L
+    private var unlocking = false
+
+    private fun applySecure() {
+        if (prefs().getBoolean("secure", false)) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    /** Vergrendeld na een minuut weg (of bij opstarten): eerst vingerafdruk, gezicht of pincode. */
+    private fun maybeLock() {
+        if (!prefs().getBoolean("lock", false) || Build.VERSION.SDK_INT < 29 || unlocking) return
+        if (stoppedAt != 0L && System.currentTimeMillis() - stoppedAt < 60_000) return
+        val root = window.decorView as ViewGroup
+        if (cover == null) {
+            cover = FrameLayout(this).apply {
+                setBackgroundColor(Color.WHITE)
+                isClickable = true
+                addView(android.widget.ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher) },
+                    FrameLayout.LayoutParams(200, 200, android.view.Gravity.CENTER))
+                setOnClickListener { maybeLock() }
+            }
+            root.addView(cover, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        unlocking = true
+        val builder = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle("Skitta ontgrendelen")
+        if (Build.VERSION.SDK_INT >= 30) {
+            builder.setAllowedAuthenticators(
+                android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            builder.setDeviceCredentialAllowed(true)
+        }
+        builder.build().authenticate(android.os.CancellationSignal(), mainExecutor,
+            object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult) {
+                    unlocking = false
+                    stoppedAt = System.currentTimeMillis()
+                    cover?.let { (it.parent as? ViewGroup)?.removeView(it) }
+                    cover = null
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    unlocking = false
+                }
+            })
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,6 +160,7 @@ class MainActivity : ComponentActivity() {
             setTurnScreenOn(true)
         }
 
+        applySecure()
         val root = FrameLayout(this)
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -244,6 +297,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         inFront = true
+        SkittaService.start(this)
         Meldingen.clearMessages(this)
         SkittaService.clear(this, 0L)
         Updater.resume(this)
@@ -256,9 +310,22 @@ class MainActivity : ComponentActivity() {
         CookieManager.getInstance().flush()
     }
 
+    override fun onStart() {
+        super.onStart()
+        maybeLock()
+        web.onResume()
+        web.resumeTimers()
+    }
+
     override fun onStop() {
         super.onStop()
-        SkittaService.start(this)
+        if (!unlocking && cover == null) stoppedAt = System.currentTimeMillis()
+        // Niet in beeld en niet aan het bellen: de pagina pauzeren (geen geluid, geen stroom).
+        // De achtergrondverbinding geeft de meldingen.
+        if (!callActive) {
+            web.onPause()
+            web.pauseTimers()
+        }
         Updater.installIfReady(this)
     }
 
@@ -281,10 +348,27 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun insets(): String = "$insetTop,$insetBottom"
 
-        /** Meldingen terwijl de pagina leeft maar de app niet in beeld is; doet de achtergrondverbinding al. */
+        /** Of de app in beeld is; anders speelt de pagina geen geluid (de meldingen doen dat). */
+        @JavascriptInterface
+        fun inFront(): Boolean = MainActivity.inFront
+
+        /** Niet storen staat aan: geen geluiden in de app. */
+        @JavascriptInterface
+        fun quiet(): Boolean {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            return nm.currentInterruptionFilter > android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+        }
+
+        /** Tijdens een gesprek blijft de pagina actief, ook als de app niet in beeld is. */
+        @JavascriptInterface
+        fun callActive(on: Boolean) {
+            callActive = on
+        }
+
+        /** Alleen als de achtergrondverbinding niet draait; anders geeft die de melding al. */
         @JavascriptInterface
         fun notify(title: String, body: String, c: String, kind: String) {
-            if (inFront || SkittaService.enabled(this@MainActivity)) return
+            if (inFront || SkittaService.running) return
             val conv = c.toLongOrNull() ?: 0L
             if (kind == "call") Meldingen.call(this@MainActivity, title, false, conv)
             else Meldingen.show(this@MainActivity, conv.toInt(), Meldingen.CH_BERICHTEN, title, body, conv)
@@ -346,6 +430,23 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun signedOut() {
             stopService(Intent(this@MainActivity, SkittaService::class.java))
+        }
+
+        @JavascriptInterface
+        fun secure(): Boolean = prefs().getBoolean("secure", false)
+
+        @JavascriptInterface
+        fun setSecure(on: Boolean) {
+            prefs().edit().putBoolean("secure", on).apply()
+            runOnUiThread { applySecure() }
+        }
+
+        @JavascriptInterface
+        fun lock(): Boolean = prefs().getBoolean("lock", false)
+
+        @JavascriptInterface
+        fun setLock(on: Boolean) {
+            prefs().edit().putBoolean("lock", on).apply()
         }
 
         @JavascriptInterface
@@ -449,6 +550,7 @@ class MainActivity : ComponentActivity() {
         val HOST: String get() = SkittaService.HOST
         private val HOME: String get() = "${SkittaService.SITE}/"
         @Volatile var inFront = false
+        @Volatile var callActive = false
     }
 }
 

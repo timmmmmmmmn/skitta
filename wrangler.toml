@@ -27,6 +27,10 @@ new_sqlite_classes = ["Hub"]
 binding = "MEDIA"
 bucket_name = "skitta-media"
 
+# Elk kwartier verlopen (verdwijnende) berichten opruimen. Cron-taken zijn gratis.
+[triggers]
+crons = ["*/15 * * * *"]
+
 [[routes]]
 pattern = "skitta.timvanbergen.nl"
 custom_domain = true

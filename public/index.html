@@ -12,6 +12,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/mobile.css">
   <script src="/theme.js"></script>
   <script src="/app.js" defer></script>
 </head>
@@ -96,8 +97,8 @@
   <!-- Zwevende navigatie op de telefoon (in de Android-app tekent de app hier glas overheen) -->
   <nav class="mnav" id="mnav" hidden>
     <div class="mnav-pill" id="mnav-pill">
+      <button data-nav="recent"><span class="mi-svg" data-icon="chat"></span><span>Chats</span><b class="mnav-count" id="mnav-count"></b></button>
       <button data-nav="contacts"><span class="mi-svg" data-icon="user"></span><span>Contacten</span></button>
-      <button data-nav="recent"><span class="mi-svg" data-icon="chat"></span><span>Recent</span><b class="mnav-count" id="mnav-count"></b></button>
       <button data-nav="home"><span class="mi-svg" data-icon="home"></span><span>Home</span></button>
       <button data-nav="more"><span class="mi-svg" data-icon="menu"></span><span>Meer</span></button>
     </div>

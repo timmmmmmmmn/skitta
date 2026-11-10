@@ -1,0 +1,25 @@
+[Unit]
+Description=Skitta-bestandsserver (grote, versleutelde bijlagen)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/skitta-bestanden.env
+ExecStart=/usr/local/bin/skitta-bestanden
+DynamicUser=yes
+StateDirectory=skitta-bestanden
+Environment=SKITTA_FILES_DIR=/var/lib/skitta-bestanden
+Restart=always
+# Zo min mogelijk rechten
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

@@ -47,11 +47,13 @@ class SkittaService : Service() {
     private val seen = LinkedHashSet<Long>()
     private val rings = HashSet<String>()
     private val unread = ConcurrentHashMap<Long, Int>()
+    private val mutedUntil = ConcurrentHashMap<Long, Long>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         Meldingen.channels(this)
         val ongoing = Notification.Builder(this, Meldingen.CH_VERBINDING)
             .setSmallIcon(R.drawable.ic_stat)
@@ -78,6 +80,7 @@ class SkittaService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         stopped = true
         socket?.close(1000, null)
         main.removeCallbacksAndMessages(null)
@@ -162,6 +165,7 @@ class SkittaService : Service() {
                     names.putIfAbsent(m.getLong("id"), m.optString("display_name"))
                 }
                 if (c.optString("kind") == "group") convTitles[c.getLong("id")] = c.optString("topic").ifEmpty { "Groepsgesprek" }
+                mutedUntil[c.getLong("id")] = c.optLong("muted_until", 0L)
             }
         }
     }
@@ -204,6 +208,7 @@ class SkittaService : Service() {
         Thread {
             if (myId == 0L) refreshNames()
             if (from == myId) return@Thread
+            if ((mutedUntil[c] ?: 0L) > System.currentTimeMillis()) return@Thread
             val text = when (kind) {
                 "photo" -> "Heeft een bijlage gestuurd"
                 "call" -> if (runCatching { JSONObject(m.optString("b")).optBoolean("missed") }.getOrDefault(false)) "Gemiste oproep" else return@Thread
@@ -242,6 +247,7 @@ class SkittaService : Service() {
         const val ACTION_CLEAR = "nl.timvanbergen.skitta.CLEAR"
         private const val ONGOING_ID = 1
         private const val PREFS = "skitta"
+        @Volatile var running = false
 
         fun enabled(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("achtergrond", true)
 

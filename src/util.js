@@ -91,11 +91,11 @@ export async function createSession(env, userId, remember, token = randomToken(3
     .bind(await sha256hex(token), userId, now() + ttl, now())
     .run();
   const maxAge = remember ? `; Max-Age=${365 * 86400}` : '';
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${maxAge}`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict${maxAge}`;
 }
 
 export function clearSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 }
 
 export function sessionToken(request) {
@@ -113,7 +113,7 @@ export async function sessionUser(env, request) {
   const token = sessionToken(request);
   if (!token) return null;
   const user = await env.DB.prepare(
-    `SELECT u.id, u.username, u.display_name, u.email, u.mood, u.presence, u.avatar_id, u.is_admin, u.status, u.kdf_v, u.kdf_salt, u.pubkey, u.enc_privkey
+    `SELECT u.id, u.username, u.display_name, u.email, u.mood, u.presence, u.avatar_id, u.is_admin, u.status, u.kdf_v, u.kdf_salt, u.pubkey, u.enc_privkey, u.read_receipts
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ? AND u.status = 'active'`
   ).bind(await sha256hex(token), now()).first();

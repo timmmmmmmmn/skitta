@@ -135,6 +135,9 @@ const ICONS = {
   search: 'M15.5 14h-.8l-.3-.3A6.5 6.5 0 109.5 16a6.5 6.5 0 004.2-1.6l.3.3v.8l5 5 1.5-1.5zm-6 0A4.5 4.5 0 1114 9.5 4.5 4.5 0 019.5 14z',
   bell: 'M12 22a2 2 0 002-2h-4a2 2 0 002 2zm6-6V11c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 00-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1z',
   home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+  more: 'M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4z',
+  screen: 'M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2zM4 6h16v10H4zm8 1l-4 4h3v4h2v-4h3z',
+  send: 'M2 21l21-9L2 3v7l15 2-15 2z',
   menu: 'M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
   block: 'M12 2a10 10 0 100 20 10 10 0 000-20zM4 12c0-4.4 3.6-8 8-8 1.8 0 3.5.6 4.9 1.7L5.7 16.9A7.9 7.9 0 014 12zm8 8c-1.8 0-3.5-.6-4.9-1.7L18.3 7.1A7.9 7.9 0 0120 12c0 4.4-3.6 8-8 8z'
 };
@@ -208,6 +211,7 @@ const onlyEmoji = (text) => {
 const enc8 = (s) => new TextEncoder().encode(s);
 const dec8 = (b) => new TextDecoder().decode(b);
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
+const CHUNK = 4 * 1024 * 1024;
 
 function b64(bytes) {
   let s = '';
@@ -461,33 +465,47 @@ const E2E = {
 
   // ---- Berichten ----
 
-  async encrypt(convId, text, bytes) {
+  async encrypt(convId, text, bytes, mk = rand(32)) {
     const v = await this.ensure(convId);
-    const mk = rand(32);
     const mkKey = await aesKey(mk);
     const body = JSON.stringify({ kv: v, wk: await seal(this.keys.get(`${convId}:${v}`).key, mk), c: await seal(mkKey, enc8(text)) });
     return { body, mk: b64(mk), media: bytes ? await sealBytes(mkKey, bytes) : null };
   },
 
   // Zet m.b om naar leesbare tekst. m.raw houdt de versleutelde vorm, m.mk de berichtsleutel.
+  // Een envelop openen: { text, mk }. Gooit een fout als de sleutel er (nog) niet is.
+  async openEnvelope(c, raw, retry = true) {
+    const e = JSON.parse(raw);
+    let ck = this.keys.get(`${c}:${e.kv}`);
+    if (!ck && retry) {
+      await this.loadKeys(c);
+      ck = this.keys.get(`${c}:${e.kv}`);
+    }
+    if (!ck) throw new Error('geen sleutel');
+    const mk = await open(ck.key, e.wk);
+    return { text: dec8(await open(await aesKey(mk), e.c)), mk: b64(mk) };
+  },
+
   async decrypt(m, retry = true) {
-    if (!m.e || m.del || m.rm) return m;
-    if (m.raw === undefined) m.raw = m.b;
-    try {
-      const e = JSON.parse(m.raw);
-      let ck = this.keys.get(`${m.c}:${e.kv}`);
-      if (!ck && retry) {
-        await this.loadKeys(m.c);
-        ck = this.keys.get(`${m.c}:${e.kv}`);
+    if (m.e && !m.del && !m.rm) {
+      if (m.raw === undefined) m.raw = m.b;
+      try {
+        const o = await this.openEnvelope(m.c, m.raw, retry);
+        m.mk = o.mk;
+        m.b = o.text;
+        m.locked = false;
+      } catch {
+        m.b = '';
+        m.locked = true;
       }
-      if (!ck) throw new Error('geen sleutel');
-      const mk = await open(ck.key, e.wk);
-      m.mk = b64(mk);
-      m.b = dec8(await open(await aesKey(mk), e.c));
-      m.locked = false;
-    } catch {
-      m.b = '';
-      m.locked = true;
+    }
+    // Reacties: elk een eigen kleine envelop met de emoji.
+    m.reacts = [];
+    for (const r of m.re || []) {
+      try {
+        const emo = (await this.openEnvelope(m.c, r.b, false)).text;
+        if (emo && emo.length <= 16) m.reacts.push({ u: r.u, emo });
+      } catch {}
     }
     return m;
   },
@@ -502,6 +520,33 @@ const E2E = {
     for (const c of need) await this.loadKeys(c).catch(() => {});
     await Promise.all(list.map((m) => this.decrypt(m, false)));
     return list;
+  },
+
+  // Grote bestanden in stukken van 4 MB (elk met eigen iv), zodat niet alles tegelijk in het geheugen hoeft.
+  async sealChunks(key, blob) {
+    const parts = [];
+    for (let i = 0; i < blob.size; i += CHUNK) parts.push(await sealBytes(key, new Uint8Array(await blob.slice(i, i + CHUNK).arrayBuffer())));
+    return new Blob(parts, { type: 'application/octet-stream' });
+  },
+
+  async openChunks(key, blob, type) {
+    const parts = [];
+    for (let i = 0; i < blob.size; i += CHUNK + 28) parts.push(await openBytes(key, new Uint8Array(await blob.slice(i, i + CHUNK + 28).arrayBuffer())));
+    return new Blob(parts, { type });
+  },
+
+  // Een groot bestand van de eigen bestandsserver halen en ontsleutelen.
+  bigUrl(m, meta) {
+    if (!this.media.has(meta.big)) {
+      this.media.set(meta.big, (async () => {
+        const t = await api('GET', `big/${encodeURIComponent(meta.big)}`);
+        const res = await fetch(t.url, { headers: { authorization: `Bearer ${t.token}` } });
+        if (!res.ok) throw new Error('niet gevonden');
+        const plain = await this.openChunks(await aesKey(unb64(m.mk)), await res.blob(), meta.mime || 'application/octet-stream');
+        return URL.createObjectURL(plain);
+      })().catch(() => null));
+    }
+    return this.media.get(meta.big);
   },
 
   // Een versleutelde foto ophalen en als blob-URL teruggeven (één keer per foto).
@@ -574,6 +619,14 @@ const Sound = {
     return this.cache.get(file);
   },
   play(name, { loop = false, force = false } = {}) {
+    // In de Android-app: geen geluid als de app niet in beeld is (dat doet de melding) of bij Niet storen.
+    const nat = window.SkittaNative;
+    if (nat?.inFront) {
+      try {
+        if (!nat.inFront() && !Call.active) return;
+        if (nat.quiet() && !['HANGUP', 'CALL_OUT', 'CALL_INIT', 'BUSY', 'CALL_ERROR1'].includes(name)) return;
+      } catch {}
+    }
     if (!S.opts.sounds && !force) return;
     if (!force && S.me?.presence_pref === 'dnd' && !['LOGIN', 'LOGOUT', 'CALL_OUT', 'CALL_INIT', 'HANGUP', 'BUSY'].includes(name)) return;
     const a = loop ? new Audio(`/sounds/${this.file(name)}.wav`) : this.el(name).cloneNode();
@@ -607,7 +660,7 @@ const S = {
   msgs: new Map(),
   users: new Map(),
   cur: 'home',
-  tab: store('tab', 'contacts'),
+  tab: store('tab', window.innerWidth <= 720 ? 'recent' : 'contacts'),
   search: '',
   typing: new Map(),
   drafts: new Map(),
@@ -814,6 +867,7 @@ async function loadConvs() {
   for (const c of list) for (const m of c.members) if (!S.contacts.has(m.id)) S.users.set(m.id, m);
   updateTitle();
   for (const c of list) if (c.missing?.length) E2E.fillMissing(c);
+  for (const c of list) for (const m of c.members) Keys.check(m);
 }
 
 const refreshConv = () => loadConvs();
@@ -1061,9 +1115,9 @@ async function onMessage(m) {
     if (visible) markRead(m.c, m.id);
     else {
       conv.unread = (conv.unread || 0) + 1;
-      if (!(m.k === 'call' && parseJson(m.b).missed && Call.lastMissedNotice === m.c)) notifyMessage(conv, m);
+      if (!isMuted(conv) && !(m.k === 'call' && parseJson(m.b).missed && Call.lastMissedNotice === m.c)) notifyMessage(conv, m);
     }
-    if (m.k !== 'call') Sound.play('IM');
+    if (m.k !== 'call' && !isMuted(conv)) Sound.play('IM');
   }
   updateTitle();
   renderList();
@@ -1116,8 +1170,129 @@ function systemText(m) {
     case 'added': return `${who} heeft ${names(d.ids)} toegevoegd aan dit gesprek`;
     case 'left': return `${who} ${m.u === S.me.id ? 'hebt' : 'heeft'} dit gesprek verlaten`;
     case 'topic': return d.topic ? `${who} heeft het onderwerp gewijzigd in "${d.topic}"` : `${who} heeft het onderwerp verwijderd`;
+    case 'expire': return d.s ? `${who} heeft verdwijnende berichten ingesteld op ${expireLabel(d.s)}` : `${who} heeft verdwijnende berichten uitgezet`;
     default: return '';
   }
+}
+
+const EXPIRE_OPTIONS = [[0, 'Uit'], [300, '5 minuten'], [3600, '1 uur'], [28800, '8 uur'], [86400, '1 dag'], [604800, '1 week'], [2419200, '4 weken']];
+const expireLabel = (s) => EXPIRE_OPTIONS.find(([v]) => v === s)?.[1] || `${s} seconden`;
+const isMuted = (conv) => (conv?.muted_until || 0) > Date.now();
+
+async function setConvMe(conv, data) {
+  Object.assign(conv, data);
+  renderList();
+  renderHead();
+  try { await api('PATCH', `conversations/${conv.id}/me`, data); } catch (e) { toastError(e.message); }
+}
+
+function muteItems(conv) {
+  const until = (ms) => () => setConvMe(conv, { muted_until: Date.now() + ms });
+  return isMuted(conv)
+    ? [{ label: 'Meldingen weer aanzetten', icon: 'bell', run: () => setConvMe(conv, { muted_until: 0 }) }]
+    : [
+      { label: '1 uur', run: until(3600e3) }, { label: '8 uur', run: until(8 * 3600e3) },
+      { label: '1 dag', run: until(86400e3) }, { label: '1 week', run: until(7 * 86400e3) },
+      { label: 'Altijd', run: () => setConvMe(conv, { muted_until: 4102444800000 }) }
+    ];
+}
+
+function expireItems(conv) {
+  return EXPIRE_OPTIONS.map(([v, label]) => ({
+    label, checked: (conv.expire || 0) === v,
+    run: async () => {
+      try { await api('PATCH', `conversations/${conv.id}/expire`, { expire: v }); conv.expire = v; } catch (e) { toastError(e.message); }
+    }
+  }));
+}
+
+function convOptions(conv) {
+  return [
+    { label: conv.pinned ? 'Losmaken' : 'Vastpinnen', run: () => setConvMe(conv, { pinned: !conv.pinned }) },
+    { label: isMuted(conv) ? 'Gedempt' : 'Dempen', sub: muteItems(conv) },
+    { label: 'Verdwijnende berichten', sub: expireItems(conv) },
+    { label: conv.archived ? 'Uit archief halen' : 'Archiveren', run: () => { setConvMe(conv, { archived: !conv.archived }); if (!conv.archived) return; showHome(); } },
+    { label: 'Zoeken in gesprek…', icon: 'search', run: () => { openConv(conv.id); openFind(); } },
+    conv.kind === 'direct' && { label: 'Veiligheidsnummer…', run: () => safetyDialog(otherId(conv)) }
+  ];
+}
+
+// Verdwenen berichten ook op het scherm weghalen.
+setInterval(() => {
+  const now = Date.now();
+  for (const [c, b] of S.msgs) {
+    const before = b.list.length;
+    b.list = b.list.filter((m) => !m.x || m.x > now);
+    if (b.list.length !== before && S.cur === c) renderMessages({ keepScroll: true });
+  }
+}, 15000);
+
+// ---------- Veiligheidsnummers ----------
+// Iedereen heeft één sleutelpaar. Verandert de sleutel van een contactpersoon (bijv. na een
+// wachtwoordreset), dan waarschuwt Skitta. Met het veiligheidsnummer controleer je samen dat niemand
+// (ook de server niet) tussen jullie zit: zijn de nummers op beide telefoons gelijk, dan klopt het.
+
+const Keys = {
+  known: store('keys', {}),
+  check(user) {
+    if (!user?.pubkey || user.id === S.me?.id) return 'ok';
+    const k = this.known[user.id];
+    if (!k) {
+      this.known[user.id] = { pub: user.pubkey, verified: false };
+      save('keys', this.known);
+      return 'new';
+    }
+    if (k.pub !== user.pubkey) return 'changed';
+    return k.verified ? 'verified' : 'ok';
+  },
+  accept(user, verified = false) {
+    this.known[user.id] = { pub: user.pubkey, verified };
+    save('keys', this.known);
+  }
+};
+
+async function safetyNumber(a, b) {
+  const [x, y] = [a, b].sort();
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-512', enc8(`skitta-veiligheidsnummer|${x}|${y}`)));
+  const groups = [];
+  for (let i = 0; i < 12; i++) {
+    const n = ((digest[i * 4] << 24) | (digest[i * 4 + 1] << 16) | (digest[i * 4 + 2] << 8) | digest[i * 4 + 3]) >>> 0;
+    groups.push(String(n % 100000).padStart(5, '0'));
+  }
+  return groups;
+}
+
+function memberUser(id) {
+  for (const c of S.convs.values()) {
+    const m = c.members.find((x) => x.id === id);
+    if (m?.pubkey) return m;
+  }
+  return null;
+}
+
+async function safetyDialog(id) {
+  const u = memberUser(id);
+  if (!u || !E2E.pub) return alertDialog('Veiligheidsnummer', 'Begin eerst een gesprek met deze persoon.');
+  const groups = await safetyNumber(E2E.pub, u.pubkey);
+  const state = Keys.check(u);
+  await dialog(`Veiligheidsnummer met ${u.display_name}`, h('div', null,
+    h('p', null, `Vergelijk dit nummer met het nummer op het scherm van ${u.display_name} (samen, of via een ander kanaal). Zijn ze gelijk, dan is jullie gesprek echt alleen van jullie twee.`),
+    h('div', { class: 'safety' }, groups.map((g) => h('span', null, g))),
+    state === 'changed' ? h('p', { class: 'err' }, `Let op: de sleutel van ${u.display_name} is veranderd sinds de vorige keer.`) : null,
+    state === 'verified' ? h('p', { style: { color: '#3f840c' } }, '✓ Je hebt dit nummer gecontroleerd.') : null),
+  [
+    { label: 'Gecontroleerd, klopt', default: true, run: (close) => { Keys.accept(u, true); close(true); renderPane(); } },
+    { label: 'Sluiten', value: null }
+  ], { width: 460 });
+}
+
+function keyWarning(conv) {
+  if (conv.kind !== 'direct') return null;
+  const u = conv.members.find((m) => m.id !== S.me.id);
+  if (!u || Keys.check(u) !== 'changed') return null;
+  return h('div', { class: 'notice' }, '⚠', h('span', { class: 'grow' }, `De veiligheidssleutel van ${u.display_name} is veranderd. Dat gebeurt als ${u.display_name} een nieuw wachtwoord heeft gekregen. Controleer het veiligheidsnummer als je het niet vertrouwt.`),
+    h('button', { class: 'btn', onclick: () => safetyDialog(u.id) }, 'Controleren'),
+    h('button', { class: 'btn', onclick: () => { Keys.accept(u); renderPane(); } }, 'Oké'));
 }
 
 function onTyping(e) {
@@ -1211,9 +1386,14 @@ function renderList() {
         h('button', { class: 'btn', onclick: () => addContactDialog() }, 'Contactpersoon toevoegen')));
     }
   } else {
-    const convs = [...S.convs.values()].filter((c) => c.last || c.kind === 'group').sort((a, b) => b.last_at - a.last_at);
-    for (const c of convs) list.append(convRow(c));
-    if (!convs.length) list.append(h('div', { class: 'empty' }, 'Nog geen gesprekken.'));
+    const all = [...S.convs.values()].filter((c) => c.last || c.kind === 'group');
+    const shown = all.filter((c) => !!c.archived === !!S.showArchive)
+      .sort((a, b) => (b.pinned - a.pinned) || (b.last_at - a.last_at));
+    if (S.showArchive) list.append(h('div', { class: 'row', onclick: () => { S.showArchive = false; renderList(); } }, svg('back'), h('span', { class: 'name' }, 'Gearchiveerde chats')));
+    for (const c of shown) list.append(convRow(c));
+    const archived = all.filter((c) => c.archived).length;
+    if (!S.showArchive && archived) list.append(h('div', { class: 'row archive-row', onclick: () => { S.showArchive = true; renderList(); } }, h('span', { class: 'name' }, `Gearchiveerd (${archived})`)));
+    if (!shown.length) list.append(h('div', { class: 'empty' }, S.showArchive ? 'Geen gearchiveerde chats.' : 'Nog geen gesprekken.'));
   }
   list.scrollTop = scroll;
 }
@@ -1228,9 +1408,10 @@ function contactRow(c) {
     oncontextmenu: (e) => { e.preventDefault(); contactMenu(c, e.clientX, e.clientY); },
     onkeydown: (e) => { if (e.key === 'Enter') openContact(c.id); }
   },
+  avatar(c, 'list-av', statusClass(c)),
   h('span', { class: `st ${statusClass(c)}` }),
-  h('span', { class: 'name' }, c.display_name),
-  h('span', { class: 'mood' }, c.state === 'in' ? 'wil je toevoegen' : c.state === 'out' ? 'wacht op goedkeuring' : c.mood),
+  h('div', { class: 'two-m' }, h('span', { class: 'name' }, c.display_name),
+    h('span', { class: 'mood' }, c.state === 'in' ? 'wil je toevoegen' : c.state === 'out' ? 'wacht op goedkeuring' : c.mood)),
   unread ? h('span', { class: 'badge' }, unread) : null);
   return row;
 }
@@ -1242,13 +1423,17 @@ function convRow(conv) {
   const last = conv.last;
   const lastText = last ? `${last.u === S.me.id && last.k !== 'system' ? 'Jij: ' : ''}${previewText(last)}` : '';
   return h('div', {
-    class: `row rich ${S.cur === conv.id ? 'on' : ''} ${unread ? 'unread' : ''}`, tabindex: 0,
+    class: `row rich ${S.cur === conv.id ? 'on' : ''} ${unread ? 'unread' : ''} ${isMuted(conv) ? 'muted' : ''}`, tabindex: 0,
     onclick: () => openConv(conv.id),
     oncontextmenu: (e) => { e.preventDefault(); convMenu(conv, e.clientX, e.clientY); }
   },
+  conv.kind === 'direct' ? avatar(S.contacts.get(otherId(conv)) || userOf(otherId(conv)), 'list-av', st) : h('span', { class: 'avatar group-av list-av' }),
   h('span', { class: `st ${st}` }),
   h('div', { class: 'two' }, h('span', { class: 'name' }, convTitle(conv)), h('span', { class: 'mood' }, lastText)),
-  unread ? h('span', { class: 'badge' }, unread) : h('span', { class: 'when' }, shortWhen(conv.last_at)));
+  h('div', { class: 'side-info' },
+    h('span', { class: 'when' }, shortWhen(conv.last_at)),
+    h('span', { class: 'flags' }, conv.pinned ? '📌' : null, isMuted(conv) ? '🔕' : null, conv.expire ? '⏱' : null,
+      unread ? h('span', { class: 'badge' }, unread) : null)));
 }
 
 // ---------- Rechterpaneel ----------
@@ -1350,15 +1535,22 @@ function renderPane() {
   // Wat er al in het invoerveld van dit gesprek stond, blijft staan als het paneel opnieuw wordt opgebouwd.
   const old = $('#compose-text');
   const carry = old && Number(old.dataset.c) === conv.id && !S.drafts.has(conv.id) ? old.value : null;
+  const focused = old && document.activeElement === old ? [old.selectionStart, old.selectionEnd] : null;
   pane.replaceChildren(...[
     h('header', { class: 'conv-head', id: 'conv-head' }),
     Call.view(conv),
     findBar(conv),
+    keyWarning(conv),
     h('div', { class: 'chat', id: 'chat' }),
     h('div', { class: 'typing', id: 'typing' }),
     composeView(conv)
   ].filter(Boolean));
   if (carry != null && $('#compose-text')) $('#compose-text').value = carry;
+  if (focused && $('#compose-text')) {
+    const ta = $('#compose-text');
+    ta.focus();
+    ta.setSelectionRange(...focused);
+  }
   renderHead();
   renderMessages();
   renderTyping();
@@ -1385,7 +1577,8 @@ function renderHead() {
       h('div', { class: 'actions' },
         h('button', { class: 'sbtn blue', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, true), title: 'Videogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
         h('button', { class: 'sbtn green', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, false), title: 'Bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
-        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: !canTalk, onclick: () => groupDialog([c.id]) }, svg('plus')))
+        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: !canTalk, onclick: () => groupDialog([c.id]) }, svg('plus')),
+        moreButton(conv))
     );
   } else {
     const members = conv.members.filter((m) => !m.left);
@@ -1403,9 +1596,18 @@ function renderHead() {
         }))),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', disabled: conv.left, onclick: () => topicDialog(conv) }, 'Onderwerp'),
-        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: conv.left, onclick: () => addPeopleDialog(conv) }, svg('plus')))
+        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: conv.left, onclick: () => addPeopleDialog(conv) }, svg('plus')),
+        moreButton(conv))
     );
   }
+}
+
+function moreButton(conv) {
+  const btn = h('button', { class: 'tool more-btn', title: 'Meer', onclick: () => {
+    const r = btn.getBoundingClientRect();
+    popMenu(convOptions(conv).concat(conv.kind === 'group' && !conv.left ? ['-', { label: 'Gesprek verlaten', icon: 'trash', run: () => leaveConv(conv) }] : []), r.right - 230, r.bottom + 2, { anchor: btn });
+  } }, svg('more'));
+  return btn;
 }
 
 function statusLine(c) {
@@ -1622,6 +1824,15 @@ function messageRow(m, first, conv) {
     class: 'time', title: new Date(m.at).toLocaleString('nl-NL'),
     onclick: m.failed ? () => retrySend(m) : null
   }, m.failed ? 'Opnieuw' : m.pending ? '…' : time(m.at));
+  // Op de telefoon staan tijd en vinkjes in de ballon.
+  if (!['system'].includes(m.k)) {
+    const tick = mine && !m.del && !m.rm ? (m.failed ? '!' : m.pending ? '🕓' : readByAll(conv, m) ? '✓✓' : '✓') : '';
+    text.append(h('span', { class: `meta ${readByAll(conv, m) ? 'read' : ''}` },
+      m.x ? h('span', { class: 'timer', title: `Verdwijnt ${new Date(m.x).toLocaleString('nl-NL')}` }, '⏱') : null,
+      m.pending ? '' : time(m.at), tick ? h('span', { class: 'ticks' }, tick) : null));
+    if (mine && !m.pending && !m.failed && !m.del && !m.rm && readByAll(conv, m)) t.append(h('span', { class: 'ticks read', title: 'Gelezen' }, ' ✓✓'));
+  }
+  if (m.reacts?.length) text.append(reactionChips(m, conv));
   const row = h('div', { class: cls.join(' '), 'data-id': m.id || '', 'data-cid': m.cid || '' }, from, text, t);
   row.addEventListener('contextmenu', (e) => {
     if (e.target.closest('a')) return;
@@ -1636,6 +1847,76 @@ function messageRow(m, first, conv) {
   }, { passive: true });
   for (const ev of ['touchend', 'touchmove', 'touchcancel']) row.addEventListener(ev, () => clearTimeout(press), { passive: true });
   return row;
+}
+
+// Gelezen door iedereen in het gesprek (alleen als zij leesbevestigingen delen).
+function readByAll(conv, m) {
+  if (!m.id || m.u !== S.me.id) return false;
+  const others = conv.members.filter((x) => !x.left && x.id !== S.me.id);
+  return others.length > 0 && others.every((x) => (x.read || 0) >= m.id);
+}
+
+const QUICK_REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
+
+function reactionChips(m, conv) {
+  const groups = new Map();
+  for (const r of m.reacts) {
+    if (!groups.has(r.emo)) groups.set(r.emo, []);
+    groups.get(r.emo).push(r.u);
+  }
+  return h('span', { class: 'reacts' }, [...groups].map(([emo, users]) => h('button', {
+    class: `react ${users.includes(S.me.id) ? 'mine' : ''}`,
+    title: users.map(nameOf).join(', '),
+    onclick: (e) => { e.stopPropagation(); if (!conv.left) react(m, emo); }
+  }, emo, users.length > 1 ? h('b', null, users.length) : null)));
+}
+
+async function react(m, emo) {
+  const mineNow = m.reacts?.find((r) => r.u === S.me.id);
+  try {
+    const body = mineNow?.emo === emo ? '' : (await E2E.encrypt(m.c, emo)).body;
+    const out = await api('PUT', `messages/${m.id}/reaction`, { body });
+    await E2E.decrypt(out);
+    upsertMessage({ ...m, ...out, b: m.b, raw: m.raw, mk: m.mk, locked: m.locked });
+    renderMessages({ keepScroll: true });
+  } catch (e) {
+    toastError(e.message);
+  }
+}
+
+async function hideForMe(m) {
+  try {
+    await api('POST', `messages/${m.id}/hide`);
+    const b = bucket(m.c);
+    b.list = b.list.filter((x) => x.id !== m.id);
+    renderMessages({ keepScroll: true });
+  } catch (e) {
+    toastError(e.message);
+  }
+}
+
+// Doorsturen: opnieuw versleutelen voor het andere gesprek (bijlagen worden opnieuw geüpload).
+async function forwardDialog(m) {
+  const convs = [...S.convs.values()].filter((c) => !c.left).sort((a, b) => b.last_at - a.last_at);
+  const box = h('div', { class: 'pick-list' }, convs.map((c) => h('label', null,
+    h('input', { type: 'checkbox', value: c.id }), h('span', { class: `st ${c.kind === 'group' ? 'group' : statusClass(S.contacts.get(otherId(c)))}` }), convTitle(c))));
+  await dialog('Doorsturen', h('div', null, h('p', null, 'Naar welke gesprekken?'), box), [{
+    label: 'Doorsturen', default: true, run: async (close) => {
+      const ids = [...box.querySelectorAll('input:checked')].map((i) => Number(i.value));
+      close(true);
+      for (const id of ids) {
+        if (m.k === 'text') await sendText(id, m.b);
+        else if (m.k === 'photo') {
+          const meta = attachMeta(m);
+          const url = m.localUrl || (meta.big ? await E2E.bigUrl(m, meta) : await E2E.photoUrl(m, meta.mime));
+          if (!url) continue;
+          const blob = await (await fetch(url)).blob();
+          await sendFile(id, new File([blob], meta.name || 'bijlage', { type: meta.mime || blob.type }), { t: meta.t, dur: meta.dur });
+        }
+      }
+      toast({ title: 'Doorgestuurd', text: `Naar ${ids.length} gesprek${ids.length === 1 ? '' : 'ken'}`, plain: true });
+    }
+  }, { label: 'Annuleren', value: null }]);
 }
 
 function renderTyping() {
@@ -1669,7 +1950,7 @@ function composeView(conv) {
         cancelEdit();
       }
     },
-    oninput: () => { autoGrow(ta); typingPing(conv.id); },
+    oninput: () => { autoGrow(ta); typingPing(conv.id); sendIcon(); },
     onpaste: (e) => {
       const files = [...(e.clipboardData?.files || [])];
       if (files.length) { e.preventDefault(); for (const f of files) sendFile(conv.id, f); }
@@ -1677,7 +1958,7 @@ function composeView(conv) {
   });
   ta.value = S.drafts.get(conv.id) || '';
   S.drafts.delete(conv.id);
-  setTimeout(() => autoGrow(ta), 0);
+  setTimeout(() => { autoGrow(ta); sendIcon(); }, 0);
   const file = h('input', {
     type: 'file', accept: 'image/*,video/*', multiple: true, hidden: true,
     onchange: () => { for (const f of file.files) sendFile(conv.id, f); file.value = ''; }
@@ -1700,8 +1981,22 @@ function composeView(conv) {
       file, anyFile),
     h('div', { class: 'rec-bar', id: 'rec-bar', hidden: true }),
     banner,
-    h('div', { class: 'compose-box' }, ta,
-      h('button', { class: 'sbtn blue', onclick: sendFromCompose, title: 'Verzenden (Enter)' }, S.editing ? 'Opslaan' : 'Verzenden')));
+    h('div', { class: 'compose-box' },
+      h('button', { class: 'm-only m-attach', title: 'Bijlage', onclick: (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        popMenu([
+          { label: 'Foto of video', icon: 'photo', run: () => file.click() },
+          { label: 'Bestand', icon: 'clip', run: () => anyFile.click() }
+        ], r.left, r.top - 90, { anchor: e.currentTarget });
+      } }, svg('plus')),
+      h('div', { class: 'm-field' },
+        h('button', { class: 'm-only m-emo', title: 'Emoticons', onclick: (e) => emoticonMenu(e.currentTarget, ta) }, smileyIcon()),
+        ta),
+      h('button', { class: 'sbtn blue d-only', onclick: sendFromCompose, title: 'Verzenden (Enter)' }, S.editing ? 'Opslaan' : 'Verzenden'),
+      h('button', { class: 'm-only m-send', id: 'm-send', title: 'Verzenden', onclick: () => {
+        if ($('#compose-text').value.trim() || S.editing) sendFromCompose();
+        else Voice.start(conv.id);
+      } }, svg('mic'))));
 }
 
 function smileyIcon() {
@@ -1709,6 +2004,16 @@ function smileyIcon() {
   s.setAttribute('viewBox', '0 0 16 16');
   s.innerHTML = '<defs><radialGradient id="sm" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="#fff6a8"/><stop offset=".6" stop-color="#ffd21f"/><stop offset="1" stop-color="#eaa400"/></radialGradient></defs><circle cx="8" cy="8" r="7" fill="url(#sm)" stroke="#c48a00"/><circle cx="5.7" cy="6.3" r="1" fill="#5a3b00"/><circle cx="10.3" cy="6.3" r="1" fill="#5a3b00"/><path d="M4.7 9.3c.8 1.6 2 2.3 3.3 2.3s2.5-.7 3.3-2.3" fill="none" stroke="#5a3b00" stroke-width="1.1" stroke-linecap="round"/>';
   return s;
+}
+
+// Telefoon: microfoon als er niets getypt is, anders het verzendpijltje.
+function sendIcon() {
+  const btn = $('#m-send');
+  if (!btn) return;
+  const hasText = !!$('#compose-text')?.value.trim() || !!S.editing;
+  if (btn.dataset.mode === String(hasText)) return;
+  btn.dataset.mode = String(hasText);
+  btn.replaceChildren(svg(hasText ? 'send' : 'mic'));
 }
 
 function autoGrow(ta) {
@@ -1724,6 +2029,7 @@ function saveDraft() {
 let typingSent = 0;
 let typingStop = null;
 function typingPing(convId) {
+  if (S.opts.typing === false) return;
   const now = Date.now();
   if (now - typingSent > 3000) {
     typingSent = now;
@@ -1890,10 +2196,10 @@ async function prepareVideo(file, onProgress) {
     const w0 = v.videoWidth;
     const h0 = v.videoHeight;
     if (Number.isFinite(dur) && dur > MAX_VIDEO_SECONDS) throw new Error(`Video's mogen maximaal ${MAX_VIDEO_SECONDS / 60} minuten duren`);
-    const small = file.size <= 8 * 1024 * 1024 && Math.max(w0, h0) <= 1280;
+    const small = (file.size <= 8 * 1024 * 1024 && Math.max(w0, h0) <= 1280) || (S.me.big_files && file.size <= 1024 ** 3);
     const canRecord = window.MediaRecorder && HTMLCanvasElement.prototype.captureStream;
     if (small || !canRecord) {
-      if (file.size > MAX_FILE) throw new Error('Deze video is te groot (max. 25 MB)');
+      if (file.size > MAX_FILE && !S.me.big_files) throw new Error('Deze video is te groot (max. 25 MB)');
       return { blob: file, w: w0, h: h0, dur, mime: file.type };
     }
     const scale = Math.min(1, 960 / Math.max(w0, h0));
@@ -1971,14 +2277,22 @@ async function sendFile(convId, file, extra = {}, existing) {
       hgt = vid.h;
       meta.dur = Math.round(vid.dur || 0);
       meta.mime = vid.mime;
-    } else if (file.size > MAX_FILE) {
-      throw new Error('Bestanden mogen maximaal 25 MB zijn');
+    } else if (file.size > (S.me.big_files ? 1024 ** 3 : MAX_FILE)) {
+      throw new Error(S.me.big_files ? 'Bestanden mogen maximaal 1 GB zijn' : 'Bestanden mogen maximaal 25 MB zijn');
     }
     meta.size = blob.size;
     local.w = w;
     local.h = hgt;
     local.progress = 'Versturen…';
     if (S.cur === convId) renderMessages({ keepScroll: true });
+    if (blob.size > (S.me.big_files || Infinity)) {
+      await sendBig(convId, blob, meta, local, cid);
+      Sound.play('FT_COMPLETE');
+      if (S.cur === convId) renderMessages({ keepScroll: true });
+      renderList();
+      return;
+    }
+    if (blob.size > MAX_FILE) throw new Error('Bestanden boven 25 MB kunnen pas als de bestandsserver aanstaat');
     const text = JSON.stringify(meta);
     const sealed = await E2E.encrypt(convId, text, new Uint8Array(await blob.arrayBuffer()));
     const res = await fetch(`/api/conversations/${convId}/photo?enc=1&w=${w}&h=${hgt}&cid=${cid}`, {
@@ -2005,17 +2319,54 @@ async function sendFile(convId, file, extra = {}, existing) {
   renderList();
 }
 
+// Grote bijlage: versleutelen in stukken, uploaden naar de eigen bestandsserver, dan het bericht sturen.
+async function sendBig(convId, blob, meta, local, cid) {
+  const mk = rand(32);
+  local.progress = 'Versleutelen…';
+  if (S.cur === convId) renderMessages({ keepScroll: true });
+  const sealedBlob = await E2E.sealChunks(await aesKey(mk), blob);
+  const ticket = await api('POST', `conversations/${convId}/big`, { size: sealedBlob.size });
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', ticket.url);
+    xhr.setRequestHeader('authorization', `Bearer ${ticket.token}`);
+    xhr.upload.onprogress = (e) => {
+      const el = document.querySelector(`[data-cid="${cid}"] .progress`);
+      if (el && e.total) el.textContent = `Uploaden… ${Math.round((e.loaded / e.total) * 100)}%`;
+    };
+    xhr.onload = () => (xhr.status === 201 ? resolve() : reject(new Error('Uploaden naar de bestandsserver is mislukt')));
+    xhr.onerror = () => reject(new Error('De bestandsserver is niet bereikbaar'));
+    xhr.send(sealedBlob);
+  });
+  meta.big = ticket.id;
+  meta.until = ticket.expires_at;
+  const text = JSON.stringify(meta);
+  const sealed = await E2E.encrypt(convId, text, null, mk);
+  const m = await api('POST', `conversations/${convId}/bigmsg`, { file: ticket.id, body: sealed.body, client_id: cid });
+  const url = local.localUrl;
+  Object.assign(m, { raw: m.b, b: text, mk: sealed.mk });
+  E2E.media.set(ticket.id, Promise.resolve(url));
+  upsertMessage({ ...m, localUrl: url });
+  const conv = S.convs.get(convId);
+  if (conv) { conv.last = m; conv.last_at = m.at; }
+}
+
 const sendPhoto = (convId, file, existing) => sendFile(convId, file, existing?.extra || {}, existing);
 
 function attachmentView(m) {
   const meta = attachMeta(m) || { t: 'photo' };
   const wrap = h('div', { class: `att att-${meta.t}` });
-  if (!m.media && !m.localUrl) {
+  if (!m.media && !m.localUrl && !meta.big) {
     wrap.append(h('span', { class: 'muted' }, 'Deze bijlage is niet meer beschikbaar.'));
     return wrap;
   }
+  if (meta.big && meta.until && meta.until < Date.now() && !m.localUrl) {
+    wrap.append(h('span', { class: 'muted' }, `${meta.name || 'Bestand'} is verlopen en verwijderd.`));
+    return wrap;
+  }
   const getUrl = () => (m.localUrl ? Promise.resolve(m.localUrl)
-    : m.e ? E2E.photoUrl(m, meta.mime) : Promise.resolve(`/api/media/${encodeURIComponent(m.media)}`));
+    : meta.big ? E2E.bigUrl(m, meta)
+      : m.e ? E2E.photoUrl(m, meta.mime) : Promise.resolve(`/api/media/${encodeURIComponent(m.media)}`));
   if (meta.t === 'photo') {
     const img = h('img', { class: 'photo', alt: 'Foto', onclick: () => img.src && lightbox(img.src) });
     if (m.w && m.h) {
@@ -2300,6 +2651,8 @@ function contactMenu(c, x, y) {
 function convMenu(conv, x, y) {
   popMenu([
     { label: 'Openen', icon: 'chat', run: () => openConv(conv.id) },
+    ...convOptions(conv),
+    '-',
     conv.unread ? { label: 'Markeren als gelezen', run: () => markRead(conv.id, conv.last?.id) } : null,
     conv.kind === 'group' && !conv.left && { label: 'Onderwerp wijzigen…', icon: 'pencil', run: () => topicDialog(conv) },
     conv.kind === 'group' && !conv.left && { label: 'Personen toevoegen…', icon: 'plus', run: () => addPeopleDialog(conv) },
@@ -2313,16 +2666,45 @@ function messageMenu(m, conv, x, y) {
   const mine = m.u === S.me.id;
   const gone = m.del || m.rm || m.locked;
   const canEdit = mine && m.k === 'text' && !gone && Date.now() - m.at < 24 * 3600e3 && !conv.left;
+  const reactItems = !gone && !conv.left && m.k !== 'call'
+    ? QUICK_REACTIONS.map((emo) => ({ label: emo, checked: m.reacts?.some((r) => r.u === S.me.id && r.emo === emo), run: () => react(m, emo) }))
+    : null;
+  if (mobile() && !Native.api?.glassMenu) return messageSheet(m, conv, reactItems);
   popMenu([
+    reactItems && { label: 'Reageren', sub: reactItems },
+    reactItems && '-',
     !gone && m.k === 'text' && !m.locked && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, '')) },
     !gone && !conv.left && m.k !== 'call' && { label: 'Citeren', icon: 'quote', run: () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); } },
     !gone && m.k === 'photo' && attachMeta(m)?.t === 'photo' && m.media && { label: 'Foto openen', icon: 'photo', run: async () => lightbox(m.e ? await E2E.photoUrl(m) : `/api/media/${encodeURIComponent(m.media)}`) },
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
+    !gone && m.k !== 'call' && { label: 'Doorsturen…', icon: 'back', run: () => forwardDialog(m) },
+    { label: 'Verwijderen voor mij', icon: 'trash', run: () => hideForMe(m) },
     !mine && !gone && m.k !== 'call' && '-',
     !mine && !gone && m.k !== 'call' && { label: 'Bericht melden…', icon: 'flag', run: () => reportDialog(m) }
   ], x, y);
+}
+
+// Telefoon: onderblad met snelle reacties en acties (zoals Signal).
+function messageSheet(m, conv, reactItems) {
+  closeMenus();
+  const mine = m.u === S.me.id;
+  const gone = m.del || m.rm || m.locked;
+  const act = (label, run) => h('button', { class: 'sheet-item', onclick: () => { sheet.remove(); run(); } }, label);
+  const sheet = h('div', { class: 'sheet-back', onclick: (e) => { if (e.target === sheet) sheet.remove(); } },
+    h('div', { class: 'sheet' },
+      reactItems ? h('div', { class: 'sheet-reacts' }, QUICK_REACTIONS.map((emo) => h('button', {
+        class: m.reacts?.some((r) => r.u === S.me.id && r.emo === emo) ? 'on' : '', onclick: () => { sheet.remove(); react(m, emo); }
+      }, emo))) : null,
+      !gone && !conv.left && m.k !== 'call' ? act('Beantwoorden', () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); }) : null,
+      !gone && m.k === 'text' ? act('Kopiëren', () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, ''))) : null,
+      !gone && m.k !== 'call' ? act('Doorsturen', () => forwardDialog(m)) : null,
+      mine && !gone && m.k === 'text' && Date.now() - m.at < 24 * 3600e3 ? act('Bewerken', () => startEdit(m)) : null,
+      mine && !gone && m.k !== 'call' ? act('Verwijderen voor iedereen', () => deleteMsg(m)) : null,
+      act('Verwijderen voor mij', () => hideForMe(m)),
+      !mine && !gone && m.k !== 'call' ? act('Melden', () => reportDialog(m)) : null));
+  $('#layer').append(sheet);
 }
 
 async function deleteMsg(m) {
@@ -2412,7 +2794,7 @@ function buildMenubar() {
       { label: 'Contactpersonen', checked: S.tab === 'contacts', run: () => setTab('contacts') },
       { label: 'Recente gesprekken', checked: S.tab === 'recent', run: () => setTab('recent') },
       '-',
-      { label: 'Thema', sub: themeItems() }
+      { label: 'Versie', sub: themeItems() }
     ]],
     ['Extra', () => [
       { label: 'Opties…', run: optionsDialog },
@@ -2445,9 +2827,12 @@ function buildMenubar() {
   }
 }
 
+// Versies door de jaren heen (alleen op de computer).
 const THEMES = [
-  ['', 'Windows 7 (standaard)'], ['xp', 'Windows XP'], ['blauw', 'Blauwe balk'], ['mac', 'Mac OS X'],
-  ['plat', 'Windows 8 (plat)'], ['modern', 'Modern']
+  ['v1', '1.0 (2003)'], ['v2', '2.0 (2006)'], ['v3', '3.0 (2007)'], ['v4', '4.0 (2009)'],
+  ['', '5.0 · Windows 7 (2011, standaard)'], ['v5xp', '5.0 · Windows XP (2011)'], ['v6', '6 · Windows 8 (2013)'],
+  ['v7', '7 (2014)'], ['v8', '8 (2017)'], ['v8dark', '8 donker (2019)'], ['v2021', '2021'],
+  ['mac2', '2 voor Mac (2008)'], ['mac5', '5 voor Mac (2011)'], ['mac6', '6 voor Mac (2013)']
 ];
 
 function setTheme(t) {
@@ -2499,9 +2884,9 @@ function moreMenu(anchor) {
     { label: 'Online-status', sub: presenceItems() },
     { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
     { label: 'Opties…', run: optionsDialog },
-    { label: 'Thema', sub: themeItems() },
     { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
     S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
+    Native.api?.checkForUpdate && { label: `Controleren op updates (versie ${Native.api.appVersion?.() || '?'})`, run: () => Native.api.checkForUpdate() },
     { label: 'Over Skitta', run: aboutDialog },
     '-',
     { label: 'Afmelden', run: logout }
@@ -2534,8 +2919,8 @@ function glassBar() {
     api.glassBar(JSON.stringify({
       pill: box(pill), add: box(add), active: navActive(), dark: false, visible,
       tabs: [
+        { id: 'recent', title: unread ? `Chats (${unread})` : 'Chats', icon: ICONS.chat },
         { id: 'contacts', title: 'Contacten', icon: ICONS.user },
-        { id: 'recent', title: unread ? `Recent (${unread})` : 'Recent', icon: ICONS.chat },
         { id: 'home', title: 'Home', icon: ICONS.home },
         { id: 'more', title: 'Meer', icon: ICONS.menu }
       ]
@@ -2977,9 +3362,27 @@ async function optionsDialog() {
       })() : h('label', null, notif, Native.api ? 'Meldingen regelt de app zelf' : 'Pushmeldingen op dit apparaat (ook als Skitta dicht is)'),
       isIos() && !isStandalone() ? h('p', { class: 'muted', style: { margin: '0 0 6px' } }, 'Op een iPhone werkt dit alleen als je Skitta op je beginscherm zet (Deel → Zet op beginscherm).') : null,
       cb('onlineToasts', 'Melding als een contactpersoon online komt')),
-    h('fieldset', { class: 'opt-group' }, h('legend', null, 'Thema'),
+    mobile() ? null : h('fieldset', { class: 'opt-group' }, h('legend', null, 'Versie (uiterlijk)'),
       h('div', { class: 'theme-pick' }, THEMES.map(([id, label]) => h('label', null,
         h('input', { type: 'radio', name: 'theme', checked: (o.theme || '') === id, onchange: () => setTheme(id) }), label)))),
+    h('fieldset', { class: 'opt-group' }, h('legend', null, 'Privacy'),
+      (() => {
+        const rr = h('input', { type: 'checkbox', checked: S.me.read_receipts !== false });
+        rr.onchange = async () => { S.me.read_receipts = rr.checked; try { await api('PATCH', 'me', { read_receipts: rr.checked }); } catch (e) { toastError(e.message); } };
+        return h('label', null, rr, 'Leesbevestigingen delen (uit = je ziet ze ook niet van anderen)');
+      })(),
+      cb('typing', 'Laten zien dat ik aan het typen ben', true),
+      cb('relay', 'Gesprekken altijd via de server laten lopen (verbergt je IP-adres voor de ander)'),
+      Native.api?.setSecure ? (() => {
+        const sc = h('input', { type: 'checkbox', checked: Native.api.secure() });
+        sc.onchange = () => Native.api.setSecure(sc.checked);
+        return h('label', null, sc, 'Schermbeveiliging: geen schermafbeeldingen en verborgen in recente apps');
+      })() : null,
+      Native.api?.setLock ? (() => {
+        const lk = h('input', { type: 'checkbox', checked: Native.api.lock() });
+        lk.onchange = () => Native.api.setLock(lk.checked);
+        return h('label', null, lk, 'Schermvergrendeling: ontgrendelen met vingerafdruk of pincode');
+      })() : null),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Chatten'),
       cb('enterSends', 'Enter verstuurt het bericht (Shift+Enter voor een nieuwe regel)', true))),
   [{ label: 'OK', default: true, value: true }], { width: 480 });
@@ -3208,14 +3611,27 @@ const Call = {
     return this.ice.list;
   },
 
+  // Signalen die de verbinding opzetten (offer/answer/ICE) gaan versleuteld met de gesprekssleutel,
+  // zodat ook de server geen eigen verbinding tussen jullie kan schuiven. Een wachtrij houdt de volgorde.
+  sendQueue: Promise.resolve(),
   signal(to, d, dev) {
-    return Live.send({ t: 'call', to, dev, d });
+    const conv = this.active?.conv || this.incoming?.conv;
+    this.sendQueue = this.sendQueue.then(async () => {
+      let out = d;
+      if (conv && ['offer', 'answer', 'ice', 'media'].includes(d.type)) {
+        const { type, id, ...rest } = d;
+        try { out = { type, id, enc: (await E2E.encrypt(conv, JSON.stringify(rest))).body }; } catch { return; }
+      }
+      Live.send({ t: 'call', to, dev, d: out });
+    });
+    return true;
   },
 
   async media(video) {
     return navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false
+      // Zo hoog mogelijk opnemen; bij een slechte verbinding schaalt adaptQuality het omlaag.
+      video: video ? { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, facingMode: 'user' } : false
     });
   },
 
@@ -3296,7 +3712,7 @@ const Call = {
 
   async makePc() {
     const c = this.active;
-    const pc = new RTCPeerConnection({ iceServers: await this.iceServers() });
+    const pc = new RTCPeerConnection({ iceServers: await this.iceServers(), iceTransportPolicy: S.opts.relay ? 'relay' : 'all' });
     c.pc = pc;
     pc.onicecandidate = (e) => { if (e.candidate) this.signal(c.peer, { type: 'ice', id: c.id, c: e.candidate.toJSON() }, c.peerDev); };
     pc.ontrack = (e) => {
@@ -3341,6 +3757,14 @@ const Call = {
 
   async onSignal(e) {
     const d = e.d || {};
+    if (d.enc) {
+      const conv = this.active?.conv || this.incoming?.conv;
+      try {
+        Object.assign(d, JSON.parse((await E2E.openEnvelope(conv, d.enc)).text));
+      } catch {
+        return;
+      }
+    }
     const c = this.active;
     switch (d.type) {
       case 'ring': {
@@ -3462,15 +3886,101 @@ const Call = {
     if (fresh > 0) api('POST', 'usage/turn', { bytes: fresh }).catch(() => {});
   },
 
-  async limitBitrate(c) {
-    const info = await this.relayInfo(c);
-    for (const sender of c.pc?.getSenders() || []) {
-      if (sender.track?.kind !== 'video' && sender.track !== null) continue;
+  // Kwaliteit aanpassen aan de verbinding: elke 2 seconden kijken hoeveel er past (en hoeveel er
+  // verloren gaat) en daarop bitrate, resolutie en beeldsnelheid kiezen. Goede verbinding = beste kwaliteit.
+  // Via TURN (doorgestuurd) gaat er nooit meer dan 1,5 Mbit/s door, zodat we binnen het gratis budget blijven.
+  limitBitrate(c) {
+    clearInterval(c.qualityTimer);
+    c.qualityTimer = setInterval(() => this.adaptQuality(c), 2000);
+    this.adaptQuality(c);
+  },
+
+  async adaptQuality(c) {
+    if (!c.pc || this.active !== c) return clearInterval(c.qualityTimer);
+    const stats = await c.pc.getStats().catch(() => null);
+    if (!stats) return;
+    let avail = 0;
+    let rtt = 0;
+    let lost = 0;
+    let relay = false;
+    stats.forEach((r) => {
+      if (r.type === 'candidate-pair' && (r.nominated || r.selected) && r.state === 'succeeded') {
+        avail = r.availableOutgoingBitrate || avail;
+        rtt = r.currentRoundTripTime || rtt;
+        const l = stats.get(r.localCandidateId);
+        const rm = stats.get(r.remoteCandidateId);
+        relay = l?.candidateType === 'relay' || rm?.candidateType === 'relay';
+      }
+      if (r.type === 'remote-inbound-rtp' && r.kind === 'video') lost = Math.max(lost, r.fractionLost || 0);
+    });
+    if (!avail) avail = 1_500_000;
+    // Verlies of veel vertraging: een stap voorzichtiger.
+    const effective = avail * (lost > 0.08 ? 0.5 : lost > 0.03 ? 0.75 : 1) * (rtt > 0.4 ? 0.7 : 1);
+    const tiers = [
+      { min: 3_500_000, bitrate: 4_000_000, scale: 1, fps: 30, bars: 4, label: 'Uitstekende verbinding' },
+      { min: 1_500_000, bitrate: 2_000_000, scale: 1, fps: 30, bars: 3, label: 'Goede verbinding' },
+      { min: 600_000, bitrate: 900_000, scale: 1.5, fps: 30, bars: 2, label: 'Redelijke verbinding' },
+      { min: 250_000, bitrate: 400_000, scale: 2, fps: 20, bars: 1, label: 'Zwakke verbinding' },
+      { min: 0, bitrate: 150_000, scale: 3, fps: 12, bars: 0, label: 'Slechte verbinding' }
+    ];
+    const tier = tiers.find((t) => effective >= t.min);
+    const cap = relay ? 1_500_000 : Infinity;
+    for (const sender of c.pc.getSenders()) {
+      if (sender.track?.kind !== 'video') continue;
       const p = sender.getParameters();
       if (!p.encodings?.length) p.encodings = [{}];
-      p.encodings[0].maxBitrate = info.relay ? 450_000 : 1_200_000;
+      const screen = !!c.screen;
+      p.encodings[0].maxBitrate = Math.min(cap, screen ? Math.max(tier.bitrate, 1_200_000) : tier.bitrate);
+      p.encodings[0].scaleResolutionDownBy = screen ? 1 : tier.scale;
+      p.encodings[0].maxFramerate = screen ? Math.min(tier.fps, 15) : tier.fps;
+      p.degradationPreference = screen ? 'maintain-resolution' : 'balanced';
       sender.setParameters(p).catch(() => {});
     }
+    c.quality = tier;
+    const q = document.querySelector('#stage .quality');
+    if (q) {
+      q.title = `${tier.label}${relay ? ' (via de server)' : ''}`;
+      q.dataset.bars = tier.bars;
+    }
+  },
+
+  // Scherm delen (alleen op de computer).
+  async toggleScreen() {
+    const c = this.active;
+    if (!c?.pc) return;
+    const vTx = c.pc.getTransceivers()[1];
+    if (c.screen) {
+      c.screen.stop();
+      c.local.removeTrack(c.screen);
+      c.screen = null;
+      let cam = null;
+      if (c.camWasOn) {
+        try {
+          cam = (await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 } } })).getVideoTracks()[0];
+          c.local.addTrack(cam);
+        } catch {}
+      }
+      await vTx?.sender.replaceTrack(cam);
+    } else {
+      let track;
+      try {
+        track = (await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15, max: 30 } }, audio: false })).getVideoTracks()[0];
+      } catch {
+        return;
+      }
+      track.contentHint = 'detail';
+      const cam = c.local.getVideoTracks()[0];
+      c.camWasOn = !!cam;
+      if (cam) { cam.stop(); c.local.removeTrack(cam); }
+      c.local.addTrack(track);
+      c.screen = track;
+      track.onended = () => { if (c.screen === track) this.toggleScreen(); };
+      await vTx?.sender.replaceTrack(track);
+    }
+    c.video = !!c.local.getVideoTracks()[0];
+    this.adaptQuality(c);
+    this.signal(c.peer, { type: 'media', id: c.id, video: c.video, screen: !!c.screen }, c.peerDev);
+    this.refresh();
   },
 
   flushIce() {
@@ -3495,6 +4005,7 @@ const Call = {
     clearInterval(c.tick);
     clearInterval(c.reRing);
     clearInterval(c.statsTimer);
+    clearInterval(c.qualityTimer);
     this.ended.add(c.id);
     this.reportTurn(c);
     Sound.stop('CALL_OUT');
@@ -3594,17 +4105,19 @@ const Call = {
     const localTrack = c.local.getVideoTracks()[0];
     let localV = null;
     if (localTrack) {
-      localV = h('video', { class: 'local', autoplay: true, playsinline: true, muted: true });
+      localV = h('video', { class: `local ${c.screen ? 'screen' : ''}`, autoplay: true, playsinline: true, muted: true });
       localV.srcObject = new MediaStream([localTrack]);
     }
     const stateText = { ringing: 'Bellen…', connecting: 'Verbinden…', reconnecting: 'Verbinding herstellen…', active: '' }[c.state] ?? '';
     const stage = h('div', { class: `stage ${hasRemoteVideo ? 'has-video' : ''}`, id: 'stage' },
       remoteV, localV,
       c.started ? h('div', { class: 'timer call-timer' }, duration(Math.round((Date.now() - c.started) / 1000))) : null,
+      c.started ? h('div', { class: 'quality', 'data-bars': c.quality?.bars ?? 3, title: c.quality?.label || '' }, h('i'), h('i'), h('i'), h('i')) : null,
       h('div', { class: 'peer' }, avatar(u, 'xl'), h('div', { class: 'nm' }, u.display_name), h('div', { class: 'state' }, stateText || h('span', { class: 'call-timer' }, ''))),
       h('div', { class: 'bar' },
         h('button', { class: `cbtn ${this.muted ? 'off' : ''}`, title: this.muted ? 'Microfoon aanzetten' : 'Microfoon dempen', onclick: () => this.toggleMute() }, svg(this.muted ? 'micoff' : 'mic')),
         h('button', { class: `cbtn ${localTrack ? '' : 'off'}`, title: localTrack ? 'Video uitzetten' : 'Video aanzetten', disabled: !c.pc, onclick: () => this.toggleVideo() }, svg(localTrack ? 'video' : 'videooff')),
+        navigator.mediaDevices?.getDisplayMedia && !mobile() ? h('button', { class: `cbtn ${c.screen ? 'on' : ''}`, title: c.screen ? 'Stoppen met scherm delen' : 'Scherm delen', disabled: !c.pc, onclick: () => this.toggleScreen() }, svg('screen')) : null,
         h('button', { class: 'cbtn', title: 'Volledig scherm', onclick: () => $('#stage')?.requestFullscreen?.() }, svg('full')),
         h('button', { class: 'sbtn red', onclick: () => this.hangup() }, svg('hangup'), 'Ophangen')));
     setTimeout(() => { remoteV.play().catch(() => {}); localV?.play().catch(() => {}); }, 0);
@@ -3612,6 +4125,7 @@ const Call = {
   },
 
   refresh() {
+    try { window.SkittaNative?.callActive?.(!!this.active); } catch {}
     if (typeof S.cur === 'number') {
       const conv = S.convs.get(S.cur);
       const pane = $('#pane');
