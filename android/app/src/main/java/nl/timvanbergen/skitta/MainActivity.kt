@@ -88,6 +88,21 @@ class MainActivity : ComponentActivity() {
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
+    /** Eén keer vragen of de melding "Skitta is verbonden" weg mag (de verbinding blijft gewoon werken). */
+    private fun askHideConnection() {
+        if (prefs().getBoolean("vroeg_verbergen", false) || Meldingen.connectionHidden(this)) return
+        web.postDelayed({
+            if (isFinishing) return@postDelayed
+            prefs().edit().putBoolean("vroeg_verbergen", true).apply()
+            android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Melding verbergen?")
+                .setMessage("Android toont een melding \"Skitta is verbonden\" zolang Skitta op de achtergrond meldingen ophaalt. Die kun je uitzetten; je krijgt daarna nog steeds gewoon meldingen van berichten en oproepen.\n\nZet in het volgende scherm de schakelaar uit.")
+                .setPositiveButton("Verbergen") { _, _ -> runCatching { startActivity(Meldingen.hideConnectionIntent(this)) } }
+                .setNegativeButton("Niet nu", null)
+                .show()
+        }, 2500)
+    }
+
     // ---- Privacy: schermbeveiliging en schermvergrendeling ----
     private fun prefs() = getSharedPreferences("skitta", Context.MODE_PRIVATE)
     private var cover: View? = null
@@ -426,6 +441,7 @@ class MainActivity : ComponentActivity() {
                     askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 SkittaService.start(this@MainActivity)
+                askHideConnection()
                 openPending()
                 Updater.justUpdated(this@MainActivity)?.let { name ->
                     web.evaluateJavascript("window.skittaToast && skittaToast(${JSONObject.quote("Bijgewerkt naar versie $name")})", null)
@@ -452,6 +468,11 @@ class MainActivity : ComponentActivity() {
                 bars.isAppearanceLightNavigationBars = !dark
                 web.setBackgroundColor(if (dark) Color.rgb(18, 20, 22) else Color.WHITE)
             }
+        }
+
+        @JavascriptInterface
+        fun hideConnection() {
+            runOnUiThread { runCatching { startActivity(Meldingen.hideConnectionIntent(this@MainActivity)) } }
         }
 
         @JavascriptInterface

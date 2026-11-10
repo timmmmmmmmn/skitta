@@ -1015,6 +1015,18 @@ async function sendBig(env, user, convId, request) {
   return json(m, 201);
 }
 
+// Recente gesprekken (bellen) uit alle gesprekken waar je in zit.
+async function listCalls(env, user) {
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.conversation_id AS c, m.sender_id AS u, m.body AS b, m.created_at AS at
+       FROM messages m JOIN members x ON x.conversation_id = m.conversation_id AND x.user_id = ?
+      WHERE m.kind = 'call' AND m.deleted_at IS NULL
+        AND m.id NOT IN (SELECT message_id FROM hidden WHERE user_id = ?)
+      ORDER BY m.id DESC LIMIT 100`
+  ).bind(user.id, user.id).all();
+  return json(results);
+}
+
 async function markRead(env, user, convId, request) {
   await memberOf(env, user, convId, false);
   const b = await body(request);
@@ -1328,6 +1340,7 @@ async function route(request, env, url) {
   if (p === 'push' && m === 'POST') return pushSubscribe(env, user, request);
   if (p === 'push' && m === 'DELETE') return pushUnsubscribe(env, user, request);
   if (a === 'keys' && m === 'GET') return listKeys(env, user, url);
+  if (a === 'calls' && m === 'GET') return listCalls(env, user);
 
   if (a === 'users' && b === 'search' && m === 'GET') return searchUsers(env, user, url);
 

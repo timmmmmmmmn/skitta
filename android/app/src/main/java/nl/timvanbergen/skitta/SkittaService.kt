@@ -63,9 +63,10 @@ class SkittaService : Service() {
         val ongoing = Notification.Builder(this, Meldingen.CH_VERBINDING)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Skitta is verbonden")
-            .setContentText("Je krijgt meldingen van nieuwe berichten en oproepen")
-            .setOngoing(true)
-            .setContentIntent(Meldingen.openApp(this, 0))
+            .setContentText("Tik om deze melding te verbergen")
+            .setOngoing(false)
+            .setShowWhen(false)
+            .setContentIntent(Meldingen.hideConnection(this))
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(ONGOING_ID, ongoing, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
@@ -301,6 +302,21 @@ object Meldingen {
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 600, 400, 600, 400, 600)
         })
+    }
+
+    /** Opent de instelling van alleen de melding "Skitta is verbonden"; uitzetten = weg, verbinding blijft. */
+    fun hideConnectionIntent(context: Context): Intent =
+        Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, CH_VERBINDING)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun hideConnection(context: Context): PendingIntent =
+        PendingIntent.getActivity(context, 7, hideConnectionIntent(context), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    fun connectionHidden(context: Context): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return nm.getNotificationChannel(CH_VERBINDING)?.importance == NotificationManager.IMPORTANCE_NONE
     }
 
     fun openApp(context: Context, c: Long): PendingIntent {

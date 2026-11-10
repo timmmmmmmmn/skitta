@@ -239,3 +239,11 @@
   .compose-box textarea { line-height: 20px; padding: 11px 8px 11px 2px; box-sizing: border-box; }
   .m-field { align-items: flex-end; }
 }
+.call-back { display: none; }
+@media (max-width: 720px) {
+  .call-row .side-info { flex-direction: row; align-items: center; gap: 10px; }
+  .call-back { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: none; color: var(--m-blue); }
+  .call-back svg { width: 22px; height: 22px; fill: currentColor; }
+  .call-row.missed .name, .call-row.missed .call-dir { color: #e2453c; }
+  .call-dir { font-weight: 700; }
+}

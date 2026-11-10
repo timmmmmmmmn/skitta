@@ -1109,6 +1109,7 @@ async function onMessage(m) {
     if (d.e === 'left' && m.u !== S.me.id) Sound.play('USER_LEFT');
   }
 
+  if (isNew && m.k === 'call') { S.calls = null; if (S.tab === 'calls') loadCalls(); }
   if (isNew && m.u !== S.me.id && m.k !== 'system') {
     stopTyping(m.c, m.u);
     const visible = S.cur === m.c && document.visibilityState === 'visible' && document.hasFocus();
@@ -1358,7 +1359,14 @@ function renderList() {
   const q = S.search.trim().toLowerCase();
   const match = (u) => !q || u.display_name.toLowerCase().includes(q) || u.username.includes(q);
 
-  if (S.tab === 'contacts' || q) {
+  if (S.tab === 'calls' && !q) {
+    if (!S.calls) { loadCalls(); list.append(h('div', { class: 'empty' }, 'Laden…')); }
+    else {
+      const rows = S.calls.map(callRow).filter(Boolean);
+      if (rows.length) list.append(...rows);
+      else list.append(h('div', { class: 'empty' }, 'Nog geen gesprekken. Bel iemand vanuit een chat of je contacten.'));
+    }
+  } else if (S.tab === 'contacts' || q) {
     const all = [...S.contacts.values()].filter((c) => c.state !== 'blocked' && match(c));
     const requests = all.filter((c) => c.state === 'in');
     const rest = all.filter((c) => c.state !== 'in').sort((a, b) => {
@@ -2867,16 +2875,44 @@ function setTab(tab) {
 const mobile = () => window.innerWidth <= 720;
 
 function navActive() {
-  if (S.cur === 'home' && $('#app').classList.contains('show-pane')) return 'home';
-  return S.tab === 'recent' ? 'recent' : 'contacts';
+  return S.tab === 'recent' || S.tab === 'calls' ? S.tab : 'contacts';
 }
 
 function navTo(id) {
   if (id === 'add') return addMenu($('#mnav-add'));
   if (id === 'more') return moreMenu($('#mnav-pill [data-nav="more"]'));
-  if (id === 'home') { showHome(); showPaneOnMobile(true); }
-  else { setTab(id); showPaneOnMobile(false); }
+  setTab(id);
+  showPaneOnMobile(false);
+  if (id === 'calls') loadCalls();
   renderNav();
+}
+
+// ---------- Bellen: recente gesprekken ----------
+
+async function loadCalls() {
+  try {
+    S.calls = await api('GET', 'calls');
+  } catch {
+    return;
+  }
+  if (S.tab === 'calls') renderList();
+}
+
+function callRow(m) {
+  const conv = S.convs.get(m.c);
+  if (!conv) return null;
+  const d = parseJson(m.b);
+  const mine = m.u === S.me.id;
+  const peer = conv.kind === 'direct' ? (S.contacts.get(otherId(conv)) || userOf(otherId(conv))) : null;
+  const missed = (d.missed || d.failed) && !mine;
+  const what = d.failed ? 'Mislukt' : d.missed ? (mine ? 'Niet beantwoord' : 'Gemist') : `${mine ? 'Uitgaand' : 'Inkomend'} · ${duration(d.dur || 0)}`;
+  const canCall = peer && S.contacts.get(peer.id)?.state === 'ok';
+  return h('div', { class: `row rich call-row ${missed ? 'missed' : ''}`, onclick: () => openConv(conv.id) },
+    peer ? avatar(peer, 'list-av', statusClass(S.contacts.get(peer.id))) : h('span', { class: 'avatar group-av list-av' }),
+    h('div', { class: 'two' }, h('span', { class: 'name' }, convTitle(conv)),
+      h('span', { class: 'mood' }, h('span', { class: 'call-dir' }, mine ? '↗' : '↙'), ` ${d.video ? 'Video · ' : ''}${what}`)),
+    h('div', { class: 'side-info' }, h('span', { class: 'when' }, shortWhen(m.at)),
+      canCall ? h('button', { class: 'call-back', title: d.video ? 'Videobellen' : 'Bellen', onclick: (e) => { e.stopPropagation(); Call.start(peer.id, !!d.video); } }, svg(d.video ? 'video' : 'phone')) : null));
 }
 
 function addMenu(anchor) {
@@ -2890,6 +2926,7 @@ function addMenu(anchor) {
 function moreMenu(anchor) {
   const r = anchor.getBoundingClientRect();
   popMenu([
+    { label: 'Skitta Home', icon: 'home', run: () => { showHome(); showPaneOnMobile(true); } },
     { label: 'Online-status', sub: presenceItems() },
     { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
     { label: 'Weergave', sub: modeItems() },
@@ -2931,7 +2968,7 @@ function glassBar() {
       tabs: [
         { id: 'recent', title: unread ? `Chats (${unread})` : 'Chats', icon: ICONS.chat },
         { id: 'contacts', title: 'Contacten', icon: ICONS.user },
-        { id: 'home', title: 'Home', icon: ICONS.home },
+        { id: 'calls', title: 'Bellen', icon: ICONS.phone },
         { id: 'more', title: 'Meer', icon: ICONS.menu }
       ]
     }));
@@ -3399,7 +3436,8 @@ async function optionsDialog() {
       h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '6px' } }, 'Proberen:',
         [['IM', 'Bericht'], ['CALL_IN', 'Oproep'], ['ONLINE', 'Online'], ['LOGIN', 'Aanmelden'], ['HANGUP', 'Ophangen']].map(([n, l]) => h('span', null, sample(n), ' ', l, ' ')))),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Meldingen'),
-      Native.api?.setBackground ? (() => {
+      Native.api?.hideConnection ? h('label', null, h('button', { class: 'btn', type: 'button', onclick: () => Native.api.hideConnection() }, 'Melding "Skitta is verbonden" verbergen…')) : null,
+    Native.api?.setBackground ? (() => {
         const bg = h('input', { type: 'checkbox', checked: Native.api.background() });
         bg.onchange = () => Native.api.setBackground(bg.checked);
         return h('label', null, bg, 'Verbonden blijven op de achtergrond (meldingen als de app dicht is)');
