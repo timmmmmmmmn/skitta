@@ -8,6 +8,10 @@ Chatten, bellen en videobellen met je vrienden, in de look van de klassieke mess
 - Chatten één-op-één en in groepen, live, met "is aan het typen", emoticons, citeren, bewerken en verwijderen
 - Foto's versturen (knop, slepen of plakken)
 - Bellen en videobellen één-op-één (WebRTC), met de originele geluidjes
+- Foto's, video's (worden eerst verkleind), spraakberichten en bestanden; "Gezien"; zoeken in een gesprek
+- Zes thema's: Windows 7, Windows XP, Blauwe balk, Mac OS X, Windows 8 en Modern
+- Meldingen: pushmeldingen op iPhone (beginscherm-app), Android Chrome en desktopbrowsers; eigen meldingen in de apps
+- Apps: Android (`android/`, glazen navigatie) en Windows/macOS (`desktop/`, Rust)
 - **End-to-end versleuteld**: berichten en foto's worden in de browser versleuteld; de server en de database zien alleen onleesbare gegevens. Bellen is peer-to-peer en ook versleuteld (WebRTC)
 - Berichten melden; de beheerder keurt ze goed of fout op [/beheer](https://skitta.timvanbergen.nl/beheer)
 - Beheer: meldingen, gebruikers (blokkeren, beheerder maken, wachtwoord resetten, verwijderen), mededeling op Skitta Home, registratie open/dicht
@@ -22,21 +26,26 @@ Chatten, bellen en videobellen met je vrienden, in de look van de klassieke mess
 | `public/` | De website (geen build-stap); `public/beheer/` is het beheer |
 | `public/sounds/` | De geluidjes |
 
-### Opslag
+### Kosten: altijd gratis
 
-- **Tekst**: D1. Ruim genoeg: ook het gratis plan (500 MB per database) past miljoenen berichten.
-- **Foto's**: zonder R2 als BLOB in D1 (max. 1,5 MB per foto, de app verkleint foto's tot 1600 px).
-  Dat is prima om mee te beginnen, maar D1 raakt vol bij een paar duizend foto's. Zet daarom R2 aan
-  (10 GB gratis, geen kosten voor downloaden):
-  1. Cloudflare-dashboard → R2 → aanzetten
-  2. `npx wrangler r2 bucket create skitta-media`
-  3. In `wrangler.toml` het `[[r2_buckets]]`-blok aanzetten en `npx wrangler deploy`
+Alles draait op het gratis deel van Cloudflare. `src/limits.js` houdt het verbruik per maand bij en
+weigert netjes voordat een grens bereikt is (ongeveer de helft van het gratis deel):
 
-  Nieuwe foto's gaan dan naar R2; oude foto's blijven gewoon uit D1 komen.
-- **Bellen**: peer-to-peer met STUN van Cloudflare. Achter strenge netwerken (sommige 4G-providers,
-  bedrijfsnetwerken) is een TURN-server nodig. Maak in het Cloudflare-dashboard bij Realtime → TURN een
-  sleutel aan (1000 GB per maand gratis) en zet die als secrets:
-  `npx wrangler secret put TURN_KEY_ID` en `npx wrangler secret put TURN_KEY_TOKEN`.
+| Wat | Grens in Skitta | Gratis bij Cloudflare |
+| --- | --- | --- |
+| Bijlagen opgeslagen (R2) | 7 GB | 10 GB |
+| Bijlagen opslaan per maand | 500.000 | 1 miljoen |
+| Bijlagen laden per maand (zonder cache) | 5 miljoen | 10 miljoen |
+| Bellen via TURN per maand | 400 GB | 1000 GB |
+| Uploads per persoon per dag | 200 MB | – |
+| Grootte per bijlage | 25 MB | – |
+
+Foto's worden verkleind (max. 1600 px), video's opnieuw gecodeerd (max. 960 px, ~700 kbit/s, 3 minuten),
+spraakberichten op 32 kbit/s. Bijlagen worden uit de edge-cache geladen. Via TURN gaat video op lagere
+kwaliteit. In het beheer staat het verbruik, en je kunt oude bijlagen opruimen.
+
+TURN: `npx wrangler secret put TURN_KEY_ID` en `npx wrangler secret put TURN_KEY_TOKEN` (de waarden uit
+Cloudflare → Realtime → TURN).
 
 ## Versleuteling
 
@@ -65,6 +74,17 @@ Desktop- (Rust) en Android-apps gebruiken dezelfde API en dezelfde versleuteling
 `public/app.js`): `POST /api/prelogin` geeft de salt, daarna `POST /api/login` met de inlogcode en
 `"app": true`; dat geeft een `token` terug in plaats van een cookie. Stuur die mee als
 `Authorization: Bearer <token>`, ook bij de WebSocket op `/api/ws?dev=<apparaat-id>`.
+
+## Apps
+
+- **Android** (`android/`): de site in een WebView met de glazen navigatie en menu's (Android 13+).
+  Een achtergrondverbinding (`SkittaService`) geeft meldingen als de app dicht is, zonder Google-diensten.
+  Bouwen: `./gradlew assembleRelease -PbuildNumber=N` (sleutel in ~/AndroidStudioProjects/skitta-release.*),
+  APK naar `public/download/Skitta.apk` en `public/download/android.json` ophogen: de app werkt zichzelf bij.
+- **Windows en macOS** (`desktop/`): Rust met wry/tao. Venster dicht = systeemvak; na een minuut alleen nog
+  een kleine Rust-verbinding voor meldingen. Mac: `desktop/install.sh`. Windows: `cargo build --release`
+  op Windows, of de workflow in `.github/workflows/apps.yml`.
+- **iPhone**: Safari → Deel → Zet op beginscherm; daarna meldingen aanzetten in Skitta Home.
 
 ## Ontwikkelen
 
