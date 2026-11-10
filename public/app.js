@@ -139,6 +139,11 @@ const ICONS = {
   screen: 'M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2zM4 6h16v10H4zm8 1l-4 4h3v4h2v-4h3z',
   send: 'M2 21l21-9L2 3v7l15 2-15 2z',
   menu: 'M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
+  play: 'M8 5v14l11-7z',
+  left: 'M15.4 7.4L14 6l-6 6 6 6 1.4-1.4L10.8 12z',
+  right: 'M8.6 16.6L10 18l6-6-6-6-1.4 1.4 4.6 4.6z',
+  download: 'M19 9h-4V3H9v6H5l7 7zM5 18v2h14v-2z',
+  close: 'M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z',
   block: 'M12 2a10 10 0 100 20 10 10 0 000-20zM4 12c0-4.4 3.6-8 8-8 1.8 0 3.5.6 4.9 1.7L5.7 16.9A7.9 7.9 0 014 12zm8 8c-1.8 0-3.5-.6-4.9-1.7L18.3 7.1A7.9 7.9 0 0120 12c0 4.4-3.6 8-8 8z'
 };
 
@@ -2289,6 +2294,7 @@ async function sendFile(convId, file, extra = {}, existing) {
       hgt = vid.h;
       meta.dur = Math.round(vid.dur || 0);
       meta.mime = vid.mime;
+      meta.thumb = await videoThumb(blob);
     } else if (file.size > (S.me.big_files ? 1024 ** 3 : MAX_FILE)) {
       throw new Error(S.me.big_files ? 'Bestanden mogen maximaal 1 GB zijn' : 'Bestanden mogen maximaal 5 MB zijn');
     }
@@ -2370,6 +2376,35 @@ async function sendBig(convId, blob, meta, local, cid) {
 
 const sendPhoto = (convId, file, existing) => sendFile(convId, file, existing?.extra || {}, existing);
 
+function mediaUrl(m, meta = attachMeta(m) || {}) {
+  if (m.localUrl) return Promise.resolve(m.localUrl);
+  if (meta.big) return E2E.bigUrl(m, meta);
+  if (m.e) return E2E.photoUrl(m, meta.mime);
+  return Promise.resolve(`/api/media/${encodeURIComponent(m.media)}`);
+}
+
+// Klein voorbeeldplaatje van een video (eerste beeld), gaat versleuteld mee in het bericht.
+async function videoThumb(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const v = h('video', { muted: true, playsinline: true, preload: 'auto' });
+    v.src = url;
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = rej; setTimeout(rej, 8000); });
+    v.currentTime = Math.min(0.5, (v.duration || 1) / 3);
+    await new Promise((res) => { v.onseeked = res; setTimeout(res, 2000); });
+    for (const [size, q] of [[240, 0.6], [160, 0.5], [120, 0.4]]) {
+      const scale = size / Math.max(v.videoWidth, v.videoHeight);
+      const c = h('canvas', { width: Math.round(v.videoWidth * scale), height: Math.round(v.videoHeight * scale) });
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      const data = c.toDataURL('image/jpeg', q);
+      if (data.length < 7000) return data;
+    }
+  } catch {} finally {
+    URL.revokeObjectURL(url);
+  }
+  return null;
+}
+
 function attachmentView(m) {
   const meta = attachMeta(m) || { t: 'photo' };
   const wrap = h('div', { class: `att att-${meta.t}` });
@@ -2381,11 +2416,9 @@ function attachmentView(m) {
     wrap.append(h('span', { class: 'muted' }, `${meta.name || 'Bestand'} is verlopen en verwijderd.`));
     return wrap;
   }
-  const getUrl = () => (m.localUrl ? Promise.resolve(m.localUrl)
-    : meta.big ? E2E.bigUrl(m, meta)
-      : m.e ? E2E.photoUrl(m, meta.mime) : Promise.resolve(`/api/media/${encodeURIComponent(m.media)}`));
+  const getUrl = () => mediaUrl(m, meta);
   if (meta.t === 'photo') {
-    const img = h('img', { class: 'photo', alt: 'Foto', onclick: () => img.src && lightbox(img.src) });
+    const img = h('img', { class: 'photo', alt: 'Foto', onclick: () => Gallery.open(m) });
     if (m.w && m.h) {
       const scale = Math.min(1, 320 / m.w, 260 / m.h);
       img.style.width = `${Math.round(m.w * scale)}px`;
@@ -2398,14 +2431,17 @@ function attachmentView(m) {
     getUrl().then((u) => { if (u) img.src = u; else img.alt = 'Foto kon niet worden geladen'; });
     wrap.append(img);
   } else if (meta.t === 'video') {
-    const vid = h('video', { class: 'photo', controls: true, playsinline: true, preload: 'metadata' });
-    if (m.w && m.h) {
-      const scale = Math.min(1, 360 / m.w, 270 / m.h);
-      vid.style.width = `${Math.round(m.w * scale)}px`;
-      vid.style.aspectRatio = `${m.w} / ${m.h}`;
-    }
-    getUrl().then((u) => { if (u) vid.src = u; });
-    wrap.append(vid);
+    // Voorbeeldplaatje met afspeelknop; de video zelf laadt pas in de galerij.
+    const box = h('button', { class: 'photo vthumb', title: 'Video afspelen', onclick: () => Gallery.open(m) },
+      meta.thumb ? h('img', { src: meta.thumb, alt: '' }) : null,
+      h('span', { class: 'vplay' }, svg('play')),
+      h('span', { class: 'vdur' }, [meta.dur ? duration(meta.dur) : '', meta.size ? fileSize(meta.size) : ''].filter(Boolean).join(' · ')));
+    const w = m.w || 16;
+    const hh = m.h || 9;
+    const scale = Math.min(320 / w, 240 / hh);
+    box.style.width = `${Math.round(w * scale)}px`;
+    box.style.aspectRatio = `${w} / ${hh}`;
+    wrap.append(box);
   } else if (meta.t === 'voice') {
     const au = h('audio', { controls: true, preload: 'metadata' });
     getUrl().then((u) => { if (u) au.src = u; });
@@ -2696,7 +2732,7 @@ function messageMenu(m, conv, x, y) {
     reactItems && '-',
     !gone && m.k === 'text' && !m.locked && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, '')) },
     !gone && !conv.left && m.k !== 'call' && { label: 'Citeren', icon: 'quote', run: () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); } },
-    !gone && m.k === 'photo' && attachMeta(m)?.t === 'photo' && m.media && { label: 'Foto openen', icon: 'photo', run: async () => lightbox(m.e ? await E2E.photoUrl(m) : `/api/media/${encodeURIComponent(m.media)}`) },
+    !gone && m.k === 'photo' && ['photo', 'video'].includes(attachMeta(m)?.t) && { label: attachMeta(m).t === 'video' ? 'Video afspelen' : 'Foto openen', icon: 'photo', run: () => Gallery.open(m) },
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
@@ -3525,6 +3561,172 @@ async function testDialog() {
   cancelAnimationFrame(raf);
   stream?.getTracks().forEach((t) => t.stop());
 }
+
+// ---------- Galerij: horizontaal door alle foto's en video's van een gesprek ----------
+// Vegen (telefoon), pijltjestoetsen of de pijlknoppen (computer). Video's: in de Android-app de
+// eigen videospeler van Android, elders de speler van het systeem (WebView2 / WebKit / browser).
+
+const Gallery = {
+  items: [],
+  index: 0,
+  el: null,
+
+  collect(convId) {
+    return bucket(convId).list.filter((m) => {
+      if (m.k !== 'photo' || m.del || m.rm || m.locked) return false;
+      const meta = attachMeta(m);
+      if (!['photo', 'video'].includes(meta?.t)) return false;
+      if (meta.big && meta.until && meta.until < Date.now() && !m.localUrl) return false;
+      return !!(m.media || m.localUrl || meta.big);
+    });
+  },
+
+  open(m) {
+    this.close();
+    this.items = this.collect(m.c);
+    this.index = Math.max(0, this.items.findIndex((x) => x === m || (x.id && x.id === m.id) || (x.cid && x.cid === m.cid)));
+    const track = h('div', { class: 'g-track' }, this.items.map((it, i) => h('div', { class: 'g-slide', 'data-i': i })));
+    const counter = h('span', { class: 'g-count' });
+    const info = h('div', { class: 'g-info' });
+    this.el = h('div', { class: 'gallery', tabindex: -1 },
+      h('div', { class: 'g-top' },
+        h('button', { class: 'g-btn', title: 'Sluiten (Esc)', onclick: () => this.close() }, svg('close')),
+        info, counter,
+        h('button', { class: 'g-btn', title: 'Opslaan', onclick: () => this.save() }, svg('download')),
+        h('button', { class: 'g-btn', title: 'Doorsturen', onclick: () => { const it = this.items[this.index]; this.close(); forwardDialog(it); } }, svg('back'))),
+      track,
+      h('button', { class: 'g-nav g-prev', title: 'Vorige', onclick: () => this.go(this.index - 1) }, svg('left')),
+      h('button', { class: 'g-nav g-next', title: 'Volgende', onclick: () => this.go(this.index + 1) }, svg('right')));
+    this.track = track;
+    this.counter = counter;
+    this.info = info;
+    document.body.append(this.el);
+    this.el.focus();
+    // Pas laden als een dia (bijna) in beeld komt.
+    this.observer = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) this.load(Number(e.target.dataset.i));
+    }, { root: track, rootMargin: '0px 100% 0px 100%' });
+    for (const s of track.children) this.observer.observe(s);
+    requestAnimationFrame(() => {
+      track.scrollLeft = this.index * track.clientWidth;
+      this.update();
+    });
+    let t;
+    track.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => this.update(), 80); }, { passive: true });
+    this.el.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') this.go(this.index - 1);
+      else if (e.key === 'ArrowRight') this.go(this.index + 1);
+      else if (e.key === 'Escape') this.close();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    this.backHook = window.skittaBack;
+    window.skittaBack = () => { this.close(); return true; };
+  },
+
+  go(i) {
+    if (i < 0 || i >= this.items.length) return;
+    this.track.scrollTo({ left: i * this.track.clientWidth, behavior: 'smooth' });
+  },
+
+  update() {
+    const i = Math.round(this.track.scrollLeft / Math.max(1, this.track.clientWidth));
+    this.index = Math.min(this.items.length - 1, Math.max(0, i));
+    const it = this.items[this.index];
+    if (!it) return;
+    this.counter.textContent = `${this.index + 1} / ${this.items.length}`;
+    this.info.replaceChildren(h('b', null, it.u === S.me.id ? 'Jij' : nameOf(it.u)), h('span', null, new Date(it.at).toLocaleString('nl-NL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })));
+    this.el.querySelector('.g-prev').hidden = this.index === 0;
+    this.el.querySelector('.g-next').hidden = this.index === this.items.length - 1;
+    // Video's die uit beeld zijn: pauzeren.
+    for (const v of this.track.querySelectorAll('video')) {
+      if (Number(v.closest('.g-slide').dataset.i) !== this.index) v.pause();
+      else if (v.paused && !v.dataset.started) { v.dataset.started = '1'; v.play().catch(() => {}); }
+    }
+  },
+
+  async load(i) {
+    const slide = this.track.children[i];
+    if (!slide || slide.dataset.loaded) return;
+    slide.dataset.loaded = '1';
+    const m = this.items[i];
+    const meta = attachMeta(m);
+    if (meta.t === 'video' && Native.api?.videoPlay) {
+      // Android: voorbeeld met afspeelknop; afspelen in de eigen videospeler.
+      slide.append(h('button', { class: 'g-vstart', onclick: () => this.playNative(m, meta, slide) },
+        meta.thumb ? h('img', { src: meta.thumb, alt: '' }) : null, h('span', { class: 'vplay big' }, svg('play')),
+        h('span', { class: 'g-vinfo' }, [meta.dur ? duration(meta.dur) : '', meta.size ? fileSize(meta.size) : ''].filter(Boolean).join(' · '))));
+      return;
+    }
+    slide.append(h('div', { class: 'g-loading' }, meta.t === 'video' ? 'Video laden…' : ''));
+    const url = await mediaUrl(m, meta);
+    slide.replaceChildren();
+    if (!url) { slide.append(h('div', { class: 'g-loading' }, 'Kon niet worden geladen')); return; }
+    if (meta.t === 'video') {
+      const v = h('video', { src: url, controls: true, playsinline: true, preload: 'metadata', poster: meta.thumb || null });
+      slide.append(v);
+      if (i === this.index) { v.dataset.started = '1'; v.play().catch(() => {}); }
+    } else {
+      const img = h('img', { src: url, alt: '', draggable: 'false' });
+      // Dubbelklikken of dubbeltikken: inzoomen.
+      img.addEventListener('dblclick', (e) => {
+        const on = slide.classList.toggle('zoomed');
+        if (on) {
+          const r = img.getBoundingClientRect();
+          requestAnimationFrame(() => slide.scrollTo((e.clientX - r.left) * 2 - slide.clientWidth / 2, (e.clientY - r.top) * 2 - slide.clientHeight / 2));
+        }
+      });
+      slide.append(img);
+    }
+  },
+
+  // Android: de ontsleutelde video in stukjes naar de app sturen en daar afspelen.
+  async playNative(m, meta, slide) {
+    const btn = slide.querySelector('.g-vinfo');
+    const url = await mediaUrl(m, meta);
+    if (!url) return toastError('Deze video kon niet worden geladen');
+    const blob = await (await fetch(url)).blob();
+    const id = String(m.id || m.cid);
+    Native.api.videoBegin(id);
+    const PART = 1536 * 1024;
+    for (let off = 0; off < blob.size; off += PART) {
+      const b64 = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.readAsDataURL(blob.slice(off, off + PART)); });
+      Native.api.videoChunk(id, b64);
+      if (btn) btn.textContent = `Voorbereiden… ${Math.round(((off + PART) / blob.size) * 100)}%`;
+    }
+    if (btn) btn.textContent = [meta.dur ? duration(meta.dur) : '', meta.size ? fileSize(meta.size) : ''].filter(Boolean).join(' · ');
+    Native.api.videoPlay(id, meta.mime || blob.type || 'video/mp4', meta.name || 'Video');
+  },
+
+  async save() {
+    const m = this.items[this.index];
+    if (!m) return;
+    const meta = attachMeta(m);
+    const url = await mediaUrl(m, meta);
+    if (!url) return;
+    const name = meta.name || (meta.t === 'video' ? 'video.mp4' : 'foto.jpg');
+    if (Native.api?.save) {
+      const blob = await (await fetch(url)).blob();
+      const data = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+      Native.api.save(name, meta.mime || blob.type, data);
+      return;
+    }
+    const a = h('a', { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  },
+
+  close() {
+    if (!this.el) return;
+    for (const v of this.el.querySelectorAll('video')) v.pause();
+    this.observer?.disconnect();
+    this.el.remove();
+    this.el = null;
+    if (this.backHook) window.skittaBack = this.backHook;
+  }
+};
 
 function lightbox(src) {
   const box = h('div', { class: 'lightbox', onclick: () => box.remove() },

@@ -64,4 +64,6 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.customview)
     implementation(libs.okhttp)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
 }

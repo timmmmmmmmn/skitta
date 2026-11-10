@@ -470,6 +470,25 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // ---- Video's afspelen in de eigen speler: de pagina stuurt de ontsleutelde video in stukjes ----
+        private fun videoFile(id: String) = File(VideoActivity.dir(this@MainActivity), id.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".bin")
+
+        @JavascriptInterface
+        fun videoBegin(id: String) {
+            VideoActivity.dir(this@MainActivity).listFiles()?.forEach { it.delete() }
+            videoFile(id).writeBytes(ByteArray(0))
+        }
+
+        @JavascriptInterface
+        fun videoChunk(id: String, base64: String) {
+            videoFile(id).appendBytes(Base64.decode(base64, Base64.DEFAULT))
+        }
+
+        @JavascriptInterface
+        fun videoPlay(id: String, mime: String, title: String) {
+            runOnUiThread { VideoActivity.start(this@MainActivity, videoFile(id), mime, title) }
+        }
+
         @JavascriptInterface
         fun hideConnection() {
             runOnUiThread { runCatching { startActivity(Meldingen.hideConnectionIntent(this@MainActivity)) } }
