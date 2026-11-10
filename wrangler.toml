@@ -5,7 +5,8 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/api/*"]
+# De Worker eerst, zodat http:// altijd naar https:// gaat (anders verdwijnt het inlogcookie).
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"

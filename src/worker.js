@@ -931,6 +931,10 @@ async function route(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 308);
+    }
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
       try {
         return await route(request, env, url);
