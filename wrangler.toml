@@ -22,10 +22,10 @@ class_name = "Hub"
 tag = "v1"
 new_sqlite_classes = ["Hub"]
 
-# Foto's: zodra R2 aanstaat, onderstaande regels aanzetten (zonder R2 staan foto's in D1).
-# [[r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "skitta-media"
+# Bijlagen (versleuteld). Grenzen staan in src/limits.js, zodat we binnen het gratis deel van R2 blijven.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "skitta-media"
 
 [[routes]]
 pattern = "skitta.timvanbergen.nl"

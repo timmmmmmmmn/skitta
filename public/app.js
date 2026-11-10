@@ -131,6 +131,11 @@ const ICONS = {
   quote: 'M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z',
   chat: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
   user: 'M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z',
+  clip: 'M16.5 6v11.5a4 4 0 01-8 0V5a2.5 2.5 0 015 0v10.5a1 1 0 01-2 0V6H10v9.5a2.5 2.5 0 005 0V5a4 4 0 00-8 0v12.5a5.5 5.5 0 0011 0V6z',
+  search: 'M15.5 14h-.8l-.3-.3A6.5 6.5 0 109.5 16a6.5 6.5 0 004.2-1.6l.3.3v.8l5 5 1.5-1.5zm-6 0A4.5 4.5 0 1114 9.5 4.5 4.5 0 019.5 14z',
+  bell: 'M12 22a2 2 0 002-2h-4a2 2 0 002 2zm6-6V11c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 00-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1z',
+  home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+  menu: 'M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
   block: 'M12 2a10 10 0 100 20 10 10 0 000-20zM4 12c0-4.4 3.6-8 8-8 1.8 0 3.5.6 4.9 1.7L5.7 16.9A7.9 7.9 0 014 12zm8 8c-1.8 0-3.5-.6-4.9-1.7L18.3 7.1A7.9 7.9 0 0120 12c0 4.4-3.6 8-8 8z'
 };
 
@@ -500,13 +505,13 @@ const E2E = {
   },
 
   // Een versleutelde foto ophalen en als blob-URL teruggeven (één keer per foto).
-  photoUrl(m) {
+  photoUrl(m, mime) {
     if (!this.media.has(m.media)) {
       this.media.set(m.media, (async () => {
         const res = await fetch(`/api/media/${encodeURIComponent(m.media)}`, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('Foto niet gevonden');
         const plain = await openBytes(await aesKey(unb64(m.mk)), new Uint8Array(await res.arrayBuffer()));
-        return URL.createObjectURL(new Blob([plain], { type: sniffMime(plain) }));
+        return URL.createObjectURL(new Blob([plain], { type: mime || sniffMime(plain) }));
       })().catch(() => null));
     }
     return this.media.get(m.media);
@@ -742,6 +747,7 @@ async function logout() {
   if (Call.active || Call.incoming) Call.hangup();
   Sound.play('LOGOUT', { force: !!S.opts.sounds });
   const id = S.me?.id;
+  await Push.disable().catch(() => {});
   try { await api('POST', 'logout'); } catch {}
   await E2E.forget(id);
   signedOut();
@@ -789,6 +795,9 @@ async function start(fresh = false, isNew = false) {
   else showHome();
   renderList();
   if (fresh) Sound.play('LOGIN');
+  Push.sync();
+  renderNav();
+  try { Native.api?.ready?.(); } catch {}
   if (isNew) setTimeout(() => profileDialog(), 400);
 }
 
@@ -835,8 +844,10 @@ function updateTitle() {
   let unread = 0;
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
   $('#recent-count').textContent = unread ? String(unread) : '';
+  if ($('#mnav-count')) $('#mnav-count').textContent = unread ? String(unread) : '';
   document.title = `${unread ? `(${unread}) ` : ''}Skitta™${S.me ? ` - ${S.me.username}` : ''}`;
   if (navigator.setAppBadge) (unread ? navigator.setAppBadge(unread) : navigator.clearAppBadge()).catch?.(() => {});
+  Native.badge(unread);
 }
 
 // ---------- Live verbinding ----------
@@ -1063,12 +1074,7 @@ function notifyMessage(conv, m) {
   const text = previewText(m);
   const title = conv.kind === 'group' ? `${u.display_name} in ${convTitle(conv)}` : u.display_name;
   toast({ user: u, title, text, onclick: () => openConv(conv.id) });
-  if (S.opts.notifications && document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-    try {
-      const n = new Notification(title, { body: text, icon: '/img/icon-192.png', tag: `c${conv.id}` });
-      n.onclick = () => { window.focus(); openConv(conv.id); n.close(); };
-    } catch {}
-  }
+  if (document.visibilityState !== 'visible' || !document.hasFocus()) showLocal(title, text, conv.id);
 }
 
 function parseJson(s) {
@@ -1080,7 +1086,13 @@ function previewText(m) {
   if (m.rm) return 'Bericht verwijderd door de beheerder';
   if (m.del) return 'Bericht verwijderd';
   if (m.locked) return '🔒 Versleuteld bericht';
-  if (m.k === 'photo') return m.b ? `📷 ${m.b}` : '📷 Foto';
+  if (m.k === 'photo') {
+    const meta = attachMeta(m);
+    if (meta.t === 'video') return '🎬 Video';
+    if (meta.t === 'voice') return `🎤 Spraakbericht${meta.dur ? ` (${duration(meta.dur)})` : ''}`;
+    if (meta.t === 'file') return `📎 ${meta.name || 'Bestand'}`;
+    return meta.cap ? `📷 ${meta.cap}` : '📷 Foto';
+  }
   if (m.k === 'call') return callText(m);
   if (m.k === 'system') return systemText(m);
   return m.b.replace(/^> .+?: .*\n/, '').replace(EMO_RE, (x, pre, code) => pre + (EMO_MAP.get(code.toLowerCase()) || code));
@@ -1129,6 +1141,7 @@ function onRead(e) {
   if (!conv) return;
   const m = conv.members.find((x) => x.id === e.u);
   if (m) m.read = Math.max(m.read || 0, e.id);
+  if (e.u !== S.me.id && S.cur === e.c) renderMessages({ keepScroll: true });
   if (e.u === S.me.id) {
     conv.unread = 0;
     conv.last_read = Math.max(conv.last_read || 0, e.id);
@@ -1241,6 +1254,7 @@ function convRow(conv) {
 
 function showPaneOnMobile(on) {
   $('#app').classList.toggle('show-pane', on);
+  renderNav();
 }
 
 function showHome() {
@@ -1282,6 +1296,7 @@ async function openConv(id) {
     saveDraft();
     S.editing = null;
     S.replyTo = null;
+    S.find = null;
   }
   S.cur = id;
   history.replaceState(null, '', `#c${id}`);
@@ -1337,6 +1352,7 @@ function renderPane() {
   pane.replaceChildren(...[
     h('header', { class: 'conv-head', id: 'conv-head' }),
     Call.view(conv),
+    findBar(conv),
     h('div', { class: 'chat', id: 'chat' }),
     h('div', { class: 'typing', id: 'typing' }),
     composeView(conv)
@@ -1407,6 +1423,7 @@ function homeView() {
       h('img', { src: '/img/icon-192.png', alt: '' }),
       h('div', null, h('h1', null, 'Skitta Home'), h('p', null, `Welkom, ${S.me.display_name.split(' ')[0]}!`))),
     h('div', { class: 'home-body' },
+      pushCard(),
       S.me.announcement ? h('div', { class: 'card announce' }, h('h2', null, 'Mededeling'), h('div', { class: 'card-body announce-text' }, S.me.announcement)) : null,
       requests.length ? h('div', { class: 'card' }, h('h2', null, 'Contactverzoeken'), h('div', { class: 'card-body' },
         requests.map((c) => h('div', { class: 'req' }, avatar(c), h('div', { class: 'grow' }, h('div', null, h('b', null, c.display_name), ` (${c.username})`), h('div', null, c.message)),
@@ -1472,7 +1489,10 @@ function renderMessages({ keepScroll = false } = {}) {
   if (!b.loaded) chat.append(h('div', { class: 'day' }, 'Laden…'));
   let lastDay = null;
   let prev = null;
-  for (const m of b.list) {
+  const q = S.find?.toLowerCase();
+  const shown = q ? b.list.filter((m) => !m.del && !m.rm && (m.k === 'text' ? m.b.toLowerCase().includes(q) : (attachMeta(m)?.name || '').toLowerCase().includes(q))) : b.list;
+  if (q) chat.append(h('div', { class: 'day' }, shown.length ? `${shown.length} gevonden` : 'Niets gevonden in de geladen berichten'));
+  for (const m of shown) {
     const day = dayKey(m.at);
     if (day !== lastDay) {
       chat.append(h('div', { class: 'day' }, dayLabel(m.at)));
@@ -1483,11 +1503,61 @@ function renderMessages({ keepScroll = false } = {}) {
     chat.append(messageRow(m, first, conv));
     prev = m;
   }
+  // "Gezien" onder je laatste bericht in een gesprek met één persoon.
+  if (conv.kind === 'direct' && !S.find) {
+    const other = conv.members.find((x) => x.id !== S.me.id);
+    const mine = b.list.filter((x) => x.id && x.u === S.me.id && x.k !== 'system').at(-1);
+    if (mine && other?.read >= mine.id && b.list.filter((x) => x.id).at(-1)?.id === mine.id) {
+      chat.append(h('div', { class: 'seen' }, `✓ Gezien`));
+    }
+  }
   if (b.loaded && !b.list.length) {
     chat.append(h('div', { class: 'day' }, conv.kind === 'direct' ? `Zeg hallo tegen ${convTitle(conv)}!` : 'Nog geen berichten'));
   }
+  if (q) for (const el of chat.querySelectorAll('.msg .text')) markText(el, q);
   if (keepScroll && !nearBottom) chat.scrollTop = prevTop;
   else chat.scrollTop = chat.scrollHeight;
+}
+
+function markText(el, q) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const n of nodes) {
+    const i = n.nodeValue.toLowerCase().indexOf(q);
+    if (i < 0) continue;
+    const after = n.splitText(i);
+    after.splitText(q.length);
+    after.replaceWith(h('mark', null, after.nodeValue));
+  }
+}
+
+function findBar(conv) {
+  if (S.find == null) return null;
+  const input = h('input', {
+    class: 'field', type: 'search', placeholder: 'Zoeken in dit gesprek', value: S.find,
+    oninput: () => { S.find = input.value; renderMessages(); },
+    onkeydown: (e) => { if (e.key === 'Escape') closeFind(); }
+  });
+  setTimeout(() => input.focus(), 0);
+  return h('div', { class: 'findbar', id: 'findbar' }, svg('search'), input,
+    bucket(conv.id).more ? h('button', { class: 'btn', onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      for (let i = 0; i < 40 && bucket(conv.id).more; i++) await loadOlder(conv.id);
+      renderPane();
+    } }, 'Ook oudere berichten') : null,
+    h('button', { class: 'btn', onclick: closeFind }, 'Sluiten'));
+}
+
+function openFind() {
+  if (typeof S.cur !== 'number') return;
+  S.find = S.find || '';
+  renderPane();
+}
+
+function closeFind() {
+  S.find = null;
+  renderPane();
 }
 
 async function loadOlder(convId) {
@@ -1538,27 +1608,7 @@ function messageRow(m, first, conv) {
     cls.push('gone');
     text = h('div', { class: 'text', title: 'Dit bericht komt binnen zodra iemand in het gesprek online is die de sleutel heeft' }, '🔒 Dit bericht kan nog niet worden ontsleuteld.');
   } else if (m.k === 'photo') {
-    const plainSrc = m.localUrl || (m.e ? null : `/api/media/${encodeURIComponent(m.media)}`);
-    const img = h('img', {
-      class: 'photo', alt: 'Foto', loading: 'lazy', src: plainSrc,
-      onclick: () => img.src && lightbox(img.src)
-    });
-    if (!plainSrc) {
-      E2E.photoUrl(m).then((url) => {
-        if (url) img.src = url;
-        else img.alt = 'Foto kon niet worden geladen';
-      });
-    }
-    if (m.w && m.h) {
-      const scale = Math.min(1, 320 / m.w, 260 / m.h);
-      img.style.width = `${Math.round(m.w * scale)}px`;
-      img.style.aspectRatio = `${m.w} / ${m.h}`;
-    }
-    img.addEventListener('load', () => {
-      const chat = $('#chat');
-      if (chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 300) chat.scrollTop = chat.scrollHeight;
-    }, { once: true });
-    text = h('div', { class: 'text' }, img, m.b ? richText(m.b) : null);
+    text = h('div', { class: 'text' }, attachmentView(m));
   } else {
     text = h('div', { class: `text ${onlyEmoji(m.b) ? 'big-emo' : ''}` }, richText(m.b), m.ed ? h('span', { class: 'edited', title: `Bewerkt om ${time(m.ed)}` }, '(bewerkt)') : null);
   }
@@ -1566,7 +1616,7 @@ function messageRow(m, first, conv) {
     class: 'time', title: new Date(m.at).toLocaleString('nl-NL'),
     onclick: m.failed ? () => retrySend(m) : null
   }, m.failed ? 'Opnieuw' : m.pending ? '…' : time(m.at));
-  const row = h('div', { class: cls.join(' '), 'data-id': m.id || '' }, from, text, t);
+  const row = h('div', { class: cls.join(' '), 'data-id': m.id || '', 'data-cid': m.cid || '' }, from, text, t);
   row.addEventListener('contextmenu', (e) => {
     if (e.target.closest('a')) return;
     e.preventDefault();
@@ -1615,16 +1665,20 @@ function composeView(conv) {
     },
     oninput: () => { autoGrow(ta); typingPing(conv.id); },
     onpaste: (e) => {
-      const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
-      if (file) { e.preventDefault(); sendPhoto(conv.id, file); }
+      const files = [...(e.clipboardData?.files || [])];
+      if (files.length) { e.preventDefault(); for (const f of files) sendFile(conv.id, f); }
     }
   });
   ta.value = S.drafts.get(conv.id) || '';
   S.drafts.delete(conv.id);
   setTimeout(() => autoGrow(ta), 0);
   const file = h('input', {
-    type: 'file', accept: 'image/*', multiple: true, hidden: true,
-    onchange: () => { for (const f of file.files) sendPhoto(conv.id, f); file.value = ''; }
+    type: 'file', accept: 'image/*,video/*', multiple: true, hidden: true,
+    onchange: () => { for (const f of file.files) sendFile(conv.id, f); file.value = ''; }
+  });
+  const anyFile = h('input', {
+    type: 'file', multiple: true, hidden: true,
+    onchange: () => { for (const f of anyFile.files) sendFile(conv.id, f, { t: 'file' }); anyFile.value = ''; }
   });
   const banner = S.editing
     ? h('div', { class: 'editing' }, svg('pencil'), 'Bericht bewerken', h('a', { href: '#', onclick: (e) => { e.preventDefault(); cancelEdit(); } }, 'Annuleren'))
@@ -1634,8 +1688,11 @@ function composeView(conv) {
   return h('div', { class: 'compose' },
     h('div', { class: 'compose-tools' },
       h('button', { class: 'tool', title: 'Emoticons', onclick: (e) => emoticonMenu(e.currentTarget, ta) }, smileyIcon()),
-      h('button', { class: 'tool', title: 'Foto versturen', onclick: () => file.click() }, svg('photo'), 'Foto versturen'),
-      file),
+      h('button', { class: 'tool', title: 'Foto of video versturen', onclick: () => file.click() }, svg('photo'), h('span', { class: 'tlbl' }, 'Foto/video')),
+      h('button', { class: 'tool', title: 'Bestand versturen', onclick: () => anyFile.click() }, svg('clip'), h('span', { class: 'tlbl' }, 'Bestand')),
+      h('button', { class: 'tool', title: 'Spraakbericht opnemen', onclick: () => Voice.start(conv.id) }, svg('mic'), h('span', { class: 'tlbl' }, 'Spraakbericht')),
+      file, anyFile),
+    h('div', { class: 'rec-bar', id: 'rec-bar', hidden: true }),
     banner,
     h('div', { class: 'compose-box' }, ta,
       h('button', { class: 'sbtn blue', onclick: sendFromCompose, title: 'Verzenden (Enter)' }, S.editing ? 'Opslaan' : 'Verzenden')));
@@ -1786,39 +1843,284 @@ async function prepareImage(file, max = 1600, quality = 0.85) {
   return { blob, w, h: hgt };
 }
 
-async function sendPhoto(convId, file, existing) {
-  if (!file.type.startsWith('image/')) return toastError('Je kunt alleen foto\'s versturen');
+// ---------- Bijlagen: foto's, video's, spraakberichten en bestanden ----------
+// Alles wordt eerst verkleind (foto's naar max. 1600 px JPEG, video's naar max. 960 px en ~700 kbit/s)
+// en daarna versleuteld. De beschrijving (soort, naam, grootte, duur) zit in de versleutelde tekst.
+
+const MAX_FILE = 25 * 1024 * 1024;
+const MAX_VIDEO_SECONDS = 180;
+const MAX_VOICE_SECONDS = 300;
+
+function attachMeta(m) {
+  if (m.k !== 'photo') return null;
+  if (m.b.startsWith('{"t":')) {
+    const meta = parseJson(m.b);
+    if (meta.t) return meta;
+  }
+  return { t: 'photo', cap: m.b };
+}
+
+function fileSize(n) {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+  return `${Math.max(1, Math.round(n / 1024))} kB`;
+}
+
+function kindOf(file) {
+  if (/^image\/(jpeg|png|gif|webp|heic|heif|avif|bmp)$/.test(file.type)) return 'photo';
+  if (file.type.startsWith('video/')) return 'video';
+  return 'file';
+}
+
+// Video opnieuw opnemen op lagere resolutie en bitrate (canvas + MediaRecorder, in realtime).
+async function prepareVideo(file, onProgress) {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = url;
+  v.playsInline = true;
+  v.preload = 'auto';
+  try {
+    await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('Deze video kan niet worden geopend')); });
+    const dur = v.duration;
+    const w0 = v.videoWidth;
+    const h0 = v.videoHeight;
+    if (Number.isFinite(dur) && dur > MAX_VIDEO_SECONDS) throw new Error(`Video's mogen maximaal ${MAX_VIDEO_SECONDS / 60} minuten duren`);
+    const small = file.size <= 8 * 1024 * 1024 && Math.max(w0, h0) <= 1280;
+    const canRecord = window.MediaRecorder && HTMLCanvasElement.prototype.captureStream;
+    if (small || !canRecord) {
+      if (file.size > MAX_FILE) throw new Error('Deze video is te groot (max. 25 MB)');
+      return { blob: file, w: w0, h: h0, dur, mime: file.type };
+    }
+    const scale = Math.min(1, 960 / Math.max(w0, h0));
+    const w = Math.round((w0 * scale) / 2) * 2;
+    const hh = Math.round((h0 * scale) / 2) * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = hh;
+    const g = canvas.getContext('2d');
+    const stream = canvas.captureStream(30);
+    try {
+      const ac = new AudioContext();
+      const dest = ac.createMediaStreamDestination();
+      ac.createMediaElementSource(v).connect(dest);
+      for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
+    } catch {}
+    const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
+      .find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: 700_000, audioBitsPerSecond: 64_000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise((res) => { rec.onstop = res; });
+    let raf;
+    const draw = () => {
+      g.drawImage(v, 0, 0, w, hh);
+      onProgress?.(v.currentTime / (dur || 1));
+      raf = v.requestVideoFrameCallback ? v.requestVideoFrameCallback(draw) : requestAnimationFrame(draw);
+    };
+    rec.start(1000);
+    await v.play();
+    draw();
+    await new Promise((res) => { v.onended = res; });
+    rec.stop();
+    await done;
+    if (v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(raf); else cancelAnimationFrame(raf);
+    const blob = new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
+    if (blob.size > MAX_FILE) throw new Error('Deze video is na verkleinen nog te groot (max. 25 MB)');
+    return { blob: blob.size < file.size ? blob : file, w, h: hh, dur, mime: blob.size < file.size ? blob.type : file.type };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Eén bijlage versturen. kind: 'photo', 'video', 'voice' of 'file'.
+async function sendFile(convId, file, extra = {}, existing) {
+  const kind = extra.t || kindOf(file);
   const cid = existing?.cid || uid();
-  const local = existing || { id: 0, c: convId, u: S.me.id, k: 'photo', b: '', at: Date.now(), cid, pending: true, file, localUrl: URL.createObjectURL(file) };
+  const meta = { t: kind, name: file.name || '', size: file.size, mime: file.type, ...extra };
+  const local = existing || {
+    id: 0, c: convId, u: S.me.id, k: 'photo', b: JSON.stringify(meta), at: Date.now(), cid, pending: true, file, extra,
+    localUrl: URL.createObjectURL(file)
+  };
   local.pending = true;
   local.failed = false;
+  local.progress = '';
   if (!existing) bucket(convId).list.push(local);
   if (S.cur === convId) renderMessages();
   try {
-    const img = await prepareImage(file);
-    local.w = img.w;
-    local.h = img.h;
-    const sealed = await E2E.encrypt(convId, '', new Uint8Array(await img.blob.arrayBuffer()));
-    const res = await fetch(`/api/conversations/${convId}/photo?enc=1&w=${img.w}&h=${img.h}&cid=${cid}`, {
+    let blob = file;
+    let w = 0;
+    let hgt = 0;
+    if (kind === 'photo') {
+      const img = await prepareImage(file);
+      ({ blob, w } = img);
+      hgt = img.h;
+      meta.mime = blob.type || 'image/jpeg';
+    } else if (kind === 'video') {
+      local.progress = 'Video verkleinen…';
+      if (S.cur === convId) renderMessages({ keepScroll: true });
+      const vid = await prepareVideo(file, (p) => {
+        const el = document.querySelector(`[data-cid="${cid}"] .progress`);
+        if (el) el.textContent = `Video verkleinen… ${Math.round(p * 100)}%`;
+      });
+      ({ blob, w } = vid);
+      hgt = vid.h;
+      meta.dur = Math.round(vid.dur || 0);
+      meta.mime = vid.mime;
+    } else if (file.size > MAX_FILE) {
+      throw new Error('Bestanden mogen maximaal 25 MB zijn');
+    }
+    meta.size = blob.size;
+    local.w = w;
+    local.h = hgt;
+    local.progress = 'Versturen…';
+    if (S.cur === convId) renderMessages({ keepScroll: true });
+    const text = JSON.stringify(meta);
+    const sealed = await E2E.encrypt(convId, text, new Uint8Array(await blob.arrayBuffer()));
+    const res = await fetch(`/api/conversations/${convId}/photo?enc=1&w=${w}&h=${hgt}&cid=${cid}`, {
       method: 'POST', credentials: 'same-origin', body: sealed.media,
       headers: { 'content-type': 'application/octet-stream', 'x-skitta-body': sealed.body }
     });
     const m = await res.json().catch(() => ({}));
-    if (!res.ok) throw new ApiError(res.status, m.error || 'De foto kon niet worden verstuurd');
-    Object.assign(m, { raw: m.b, b: '', mk: sealed.mk });
-    E2E.media.set(m.media, Promise.resolve(local.localUrl));
-    upsertMessage({ ...m, localUrl: local.localUrl });
+    if (!res.ok) throw new ApiError(res.status, m.error || 'De bijlage kon niet worden verstuurd');
+    const localUrl = blob === file ? local.localUrl : URL.createObjectURL(blob);
+    Object.assign(m, { raw: m.b, b: text, mk: sealed.mk });
+    E2E.media.set(m.media, Promise.resolve(localUrl));
+    upsertMessage({ ...m, localUrl });
     const conv = S.convs.get(convId);
     if (conv) { conv.last = m; conv.last_at = m.at; }
     Sound.play('FT_COMPLETE');
   } catch (e) {
     local.pending = false;
     local.failed = true;
+    local.progress = '';
     Sound.play('FT_FAILED');
-    toastError(e.message || 'De foto kon niet worden verstuurd');
+    toastError(e.message || 'De bijlage kon niet worden verstuurd');
   }
-  if (S.cur === convId) renderMessages();
+  if (S.cur === convId) renderMessages({ keepScroll: true });
   renderList();
+}
+
+const sendPhoto = (convId, file, existing) => sendFile(convId, file, existing?.extra || {}, existing);
+
+function attachmentView(m) {
+  const meta = attachMeta(m) || { t: 'photo' };
+  const wrap = h('div', { class: `att att-${meta.t}` });
+  if (!m.media && !m.localUrl) {
+    wrap.append(h('span', { class: 'muted' }, 'Deze bijlage is niet meer beschikbaar.'));
+    return wrap;
+  }
+  const getUrl = () => (m.localUrl ? Promise.resolve(m.localUrl)
+    : m.e ? E2E.photoUrl(m, meta.mime) : Promise.resolve(`/api/media/${encodeURIComponent(m.media)}`));
+  if (meta.t === 'photo') {
+    const img = h('img', { class: 'photo', alt: 'Foto', onclick: () => img.src && lightbox(img.src) });
+    if (m.w && m.h) {
+      const scale = Math.min(1, 320 / m.w, 260 / m.h);
+      img.style.width = `${Math.round(m.w * scale)}px`;
+      img.style.aspectRatio = `${m.w} / ${m.h}`;
+    }
+    img.addEventListener('load', () => {
+      const chat = $('#chat');
+      if (chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 300) chat.scrollTop = chat.scrollHeight;
+    }, { once: true });
+    getUrl().then((u) => { if (u) img.src = u; else img.alt = 'Foto kon niet worden geladen'; });
+    wrap.append(img);
+  } else if (meta.t === 'video') {
+    const vid = h('video', { class: 'photo', controls: true, playsinline: true, preload: 'metadata' });
+    if (m.w && m.h) {
+      const scale = Math.min(1, 360 / m.w, 270 / m.h);
+      vid.style.width = `${Math.round(m.w * scale)}px`;
+      vid.style.aspectRatio = `${m.w} / ${m.h}`;
+    }
+    getUrl().then((u) => { if (u) vid.src = u; });
+    wrap.append(vid);
+  } else if (meta.t === 'voice') {
+    const au = h('audio', { controls: true, preload: 'metadata' });
+    getUrl().then((u) => { if (u) au.src = u; });
+    wrap.append(h('span', { class: 'att-voice' }, svg('mic'), au, meta.dur ? h('span', { class: 'muted' }, duration(meta.dur)) : null));
+  } else {
+    const link = h('a', { class: 'att-file', href: '#', onclick: async (e) => {
+      e.preventDefault();
+      const u = await getUrl();
+      if (!u) return toastError('Dit bestand kon niet worden geladen');
+      if (Native.api?.save) {
+        const blob = await (await fetch(u)).blob();
+        const data = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+        Native.api.save(meta.name || 'bestand', meta.mime || 'application/octet-stream', data);
+        return;
+      }
+      const a = h('a', { href: u, download: meta.name || 'bestand' });
+      document.body.append(a);
+      a.click();
+      a.remove();
+    } }, h('span', { class: 'att-ico' }, fileIcon(meta.name)), h('span', { class: 'att-name' }, h('b', null, meta.name || 'Bestand'), h('span', { class: 'muted' }, fileSize(meta.size || 0))));
+    wrap.append(link);
+  }
+  if (meta.cap) wrap.append(h('div', null, richText(meta.cap)));
+  if (m.progress) wrap.append(h('div', { class: 'progress muted' }, m.progress));
+  return wrap;
+}
+
+function fileIcon(name = '') {
+  const ext = (name.split('.').pop() || '').toLowerCase().slice(0, 4);
+  return ext && ext !== name.toLowerCase() ? ext.toUpperCase() : 'BESTAND';
+}
+
+// ---------- Spraakbericht opnemen ----------
+
+const Voice = {
+  rec: null,
+  async start(convId) {
+    if (this.rec) return;
+    if (!window.MediaRecorder) return toastError('Spraakberichten worden in deze browser niet ondersteund');
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch {
+      return toastError('Skitta kan je microfoon niet gebruiken');
+    }
+    const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    const rec = new MediaRecorder(stream, { mimeType: mime || undefined, audioBitsPerSecond: 32_000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    this.rec = { rec, stream, chunks, convId, start: Date.now(), cancel: false };
+    rec.onstop = () => {
+      const r = this.rec;
+      this.rec = null;
+      stream.getTracks().forEach((t) => t.stop());
+      clearInterval(r.tick);
+      clearTimeout(r.limit);
+      renderComposeBar();
+      if (r.cancel) return;
+      const type = (rec.mimeType || mime || 'audio/webm').split(';')[0];
+      const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
+      const dur = Math.round((Date.now() - r.start) / 1000);
+      if (dur < 1) return;
+      sendFile(r.convId, new File(chunks, `Spraakbericht.${ext}`, { type }), { t: 'voice', dur });
+    };
+    rec.start(1000);
+    this.rec.tick = setInterval(() => {
+      const el = $('#rec-time');
+      if (el) el.textContent = duration(Math.round((Date.now() - this.rec.start) / 1000));
+    }, 500);
+    this.rec.limit = setTimeout(() => this.stop(), MAX_VOICE_SECONDS * 1000);
+    renderComposeBar();
+  },
+  stop(cancel = false) {
+    if (!this.rec) return;
+    this.rec.cancel = cancel;
+    this.rec.rec.stop();
+  }
+};
+
+function renderComposeBar() {
+  const bar = $('#rec-bar');
+  if (!bar) return;
+  bar.hidden = !Voice.rec;
+  bar.replaceChildren();
+  if (!Voice.rec) return;
+  bar.append(h('span', { class: 'rec-dot' }), 'Spraakbericht opnemen ', h('b', { id: 'rec-time' }, '0:00'),
+    h('span', { class: 'grow' }),
+    h('button', { class: 'btn', onclick: () => Voice.stop(true) }, 'Annuleren'),
+    h('button', { class: 'sbtn blue', style: { height: '24px' }, onclick: () => Voice.stop() }, 'Versturen'));
 }
 
 function setupDrop(pane, conv) {
@@ -1829,14 +2131,14 @@ function setupDrop(pane, conv) {
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
     depth++;
-    if (!hint) { hint = h('div', { class: 'drop-hint' }, 'Laat los om de foto te versturen'); pane.append(hint); }
+    if (!hint) { hint = h('div', { class: 'drop-hint' }, 'Laat los om te versturen'); pane.append(hint); }
   };
   pane.ondragover = (e) => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); };
   pane.ondragleave = () => { if (--depth <= 0) { hint?.remove(); hint = null; depth = 0; } };
   pane.ondrop = (e) => {
     e.preventDefault();
     hint?.remove(); hint = null; depth = 0;
-    for (const f of e.dataTransfer.files) sendPhoto(conv.id, f);
+    for (const f of e.dataTransfer.files) sendFile(conv.id, f);
   };
 }
 
@@ -1847,7 +2149,48 @@ function closeLayer() {
   for (const b of document.querySelectorAll('.menubar > button.open')) b.classList.remove('open');
 }
 
+// In de Android-app: hetzelfde menu als glazen menu van de app zelf (submenu's worden kopjes).
+const glassPicks = new Map();
+function glassMenu(items, x, y, anchor) {
+  const nat = Native.api;
+  if (!nat?.glassMenu) return false;
+  glassPicks.clear();
+  const rows = [];
+  let n = 0;
+  const add = (it) => {
+    if (!it) return;
+    if (it === '-') { if (rows.length) rows.push({ separator: true }); return; }
+    if (it.sub) { rows.push({ heading: true, title: it.label }); it.sub.forEach(add); rows.push({ separator: true }); return; }
+    const id = `m${n++}`;
+    glassPicks.set(id, it.run);
+    const row = { id, title: it.label, disabled: !!it.disabled, icon: ICONS[it.icon] || '' };
+    if (it.checked !== undefined) row.checked = !!it.checked;
+    if (/verwijder|afmelden|blokkeren/i.test(it.label)) row.destructive = true;
+    rows.push(row);
+  };
+  items.forEach(add);
+  while (rows.at(-1)?.separator) rows.pop();
+  const r = anchor?.getBoundingClientRect?.() || { left: x, top: y, width: 1, height: 1 };
+  try {
+    return !!nat.glassMenu(JSON.stringify({ x: r.left, y: r.top, w: r.width, h: r.height, dark: false, items: rows }));
+  } catch {
+    return false;
+  }
+}
+window.skittaGlassPick = (id) => glassPicks.get(id)?.();
+
+// Terugknop van Android: eerst menu of venster dicht, dan terug naar de lijst.
+window.skittaBack = () => {
+  if (document.querySelector('#layer .menu, #layer .emo-pop')) { closeMenus(); return true; }
+  if (document.querySelector('#layer .lightbox')) { closeLayer(); return true; }
+  const close = document.querySelector('#layer .overlay:last-child .dclose');
+  if (close) { close.click(); return true; }
+  if (mobile() && $('#app').classList.contains('show-pane')) { saveDraft(); showPaneOnMobile(false); return true; }
+  return false;
+};
+
 function popMenu(items, x, y, opts = {}) {
+  if (!opts.child && glassMenu(items, x, y, opts.anchor)) return null;
   if (opts.child) for (const m of document.querySelectorAll('#layer .menu.child')) m.remove();
   else closeMenus();
   const menu = h('div', { class: `menu ${opts.child ? 'child' : ''}`, role: 'menu' });
@@ -1897,6 +2240,11 @@ function outsideMenu(e) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && typeof S.cur === 'number' && S.me) {
+    e.preventDefault();
+    openFind();
+    return;
+  }
   if (e.key === 'Escape') {
     if (document.querySelector('#layer .menu, #layer .emo-pop')) closeMenus();
     else if (document.querySelector('#layer .lightbox')) closeLayer();
@@ -1960,7 +2308,7 @@ function messageMenu(m, conv, x, y) {
   popMenu([
     !gone && m.k === 'text' && !m.locked && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, '')) },
     !gone && !conv.left && m.k !== 'call' && { label: 'Citeren', icon: 'quote', run: () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); } },
-    !gone && m.k === 'photo' && { label: 'Foto openen', icon: 'photo', run: async () => lightbox(m.e ? await E2E.photoUrl(m) : `/api/media/${encodeURIComponent(m.media)}`) },
+    !gone && m.k === 'photo' && attachMeta(m)?.t === 'photo' && m.media && { label: 'Foto openen', icon: 'photo', run: async () => lightbox(m.e ? await E2E.photoUrl(m) : `/api/media/${encodeURIComponent(m.media)}`) },
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
@@ -2032,6 +2380,7 @@ function buildMenubar() {
         { label: 'Personen toevoegen…', icon: 'plus', disabled: !conv || conv.left, run: () => (group ? addPeopleDialog(conv) : groupDialog([otherId(conv)])) },
         { label: 'Onderwerp wijzigen…', icon: 'pencil', disabled: !group, run: () => topicDialog(conv) },
         '-',
+        { label: 'Zoeken in gesprek…', icon: 'search', key: 'Ctrl+F', disabled: !conv, run: openFind },
         { label: 'Alles als gelezen markeren', run: markAllRead },
         { label: 'Gesprek verlaten', icon: 'trash', disabled: !group, run: () => leaveConv(conv) }
       ];
@@ -2053,7 +2402,9 @@ function buildMenubar() {
     ['Weergave', () => [
       { label: 'Skitta Home', run: showHome },
       { label: 'Contactpersonen', checked: S.tab === 'contacts', run: () => setTab('contacts') },
-      { label: 'Recente gesprekken', checked: S.tab === 'recent', run: () => setTab('recent') }
+      { label: 'Recente gesprekken', checked: S.tab === 'recent', run: () => setTab('recent') },
+      '-',
+      { label: 'Thema', sub: themeItems() }
     ]],
     ['Extra', () => [
       { label: 'Opties…', run: optionsDialog },
@@ -2086,10 +2437,111 @@ function buildMenubar() {
   }
 }
 
+const THEMES = [
+  ['', 'Windows 7 (standaard)'], ['xp', 'Windows XP'], ['blauw', 'Blauwe balk'], ['mac', 'Mac OS X'],
+  ['plat', 'Windows 8 (plat)'], ['modern', 'Modern']
+];
+
+function setTheme(t) {
+  S.opts.theme = t;
+  saveOpts();
+  if (t) document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+}
+
+function themeItems() {
+  return THEMES.map(([id, label]) => ({ label, checked: (S.opts.theme || '') === id, run: () => setTheme(id) }));
+}
+
 function setTab(tab) {
   S.tab = tab;
   save('tab', tab);
   renderList();
+  renderNav();
+}
+
+// ---------- Navigatie op de telefoon ----------
+
+const mobile = () => window.innerWidth <= 720;
+
+function navActive() {
+  if (S.cur === 'home' && $('#app').classList.contains('show-pane')) return 'home';
+  return S.tab === 'recent' ? 'recent' : 'contacts';
+}
+
+function navTo(id) {
+  if (id === 'add') return addMenu($('#mnav-add'));
+  if (id === 'more') return moreMenu($('#mnav-pill [data-nav="more"]'));
+  if (id === 'home') { showHome(); showPaneOnMobile(true); }
+  else { setTab(id); showPaneOnMobile(false); }
+  renderNav();
+}
+
+function addMenu(anchor) {
+  const r = anchor.getBoundingClientRect();
+  popMenu([
+    { label: 'Contactpersoon toevoegen', icon: 'user', run: () => addContactDialog() },
+    { label: 'Groep maken', icon: 'chat', run: () => groupDialog() }
+  ], r.right - 220, r.top - 90, { anchor });
+}
+
+function moreMenu(anchor) {
+  const r = anchor.getBoundingClientRect();
+  popMenu([
+    { label: 'Online-status', sub: presenceItems() },
+    { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
+    { label: 'Opties…', run: optionsDialog },
+    { label: 'Thema', sub: themeItems() },
+    { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
+    S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
+    { label: 'Over Skitta', run: aboutDialog },
+    '-',
+    { label: 'Afmelden', run: logout }
+  ], r.left, r.top - 300, { anchor });
+}
+
+function renderNav() {
+  const nav = $('#mnav');
+  if (!nav || !S.me) return;
+  nav.hidden = false;
+  const active = navActive();
+  for (const b of nav.querySelectorAll('[data-nav]')) b.classList.toggle('on', b.dataset.nav === active);
+  let unread = 0;
+  for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
+  $('#mnav-count').textContent = unread ? String(unread) : '';
+  glassBar();
+}
+
+// In de Android-app: de glazen balk precies over de plek van de balk in de pagina leggen.
+function glassBar() {
+  const api = Native.api;
+  if (!api?.glassBar) return;
+  const pill = $('#mnav-pill').getBoundingClientRect();
+  const add = $('#mnav-add').getBoundingClientRect();
+  const visible = mobile() && !!S.me && !$('#app').classList.contains('show-pane') && !$('#layer .overlay');
+  const box = (r) => ({ x: r.left, y: r.top, w: r.width, h: r.height });
+  let unread = 0;
+  for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
+  try {
+    api.glassBar(JSON.stringify({
+      pill: box(pill), add: box(add), active: navActive(), dark: false, visible,
+      tabs: [
+        { id: 'contacts', title: 'Contacten', icon: ICONS.user },
+        { id: 'recent', title: unread ? `Recent (${unread})` : 'Recent', icon: ICONS.chat },
+        { id: 'home', title: 'Home', icon: ICONS.home },
+        { id: 'more', title: 'Meer', icon: ICONS.menu }
+      ]
+    }));
+  } catch {}
+}
+
+window.skittaGlassNav = (id) => navTo(id);
+window.addEventListener('resize', () => renderNav());
+
+function setupNav() {
+  for (const el of document.querySelectorAll('.mi-svg[data-icon]')) el.append(svg(el.dataset.icon));
+  for (const b of document.querySelectorAll('#mnav [data-nav]')) b.onclick = () => navTo(b.dataset.nav);
+  if (Native.api) document.documentElement.classList.add('native');
 }
 
 function markAllRead() {
@@ -2486,14 +2938,18 @@ async function optionsDialog() {
   const vol = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: o.volume });
   vol.oninput = () => { o.volume = Number(vol.value); saveOpts(); };
   vol.onchange = () => Sound.play('IM', { force: true });
-  const notif = h('input', { type: 'checkbox', checked: o.notifications && 'Notification' in window && Notification.permission === 'granted' });
+  const notif = h('input', { type: 'checkbox', disabled: !!Native.api });
+  Push.state().then((st) => { notif.checked = Native.api ? true : st === 'on'; });
   notif.onchange = async () => {
-    if (notif.checked && 'Notification' in window && Notification.permission !== 'granted') {
-      const r = await Notification.requestPermission();
-      notif.checked = r === 'granted';
+    try {
+      if (notif.checked) await Push.enable();
+      else await Push.disable();
+      o.notifications = notif.checked;
+      saveOpts();
+    } catch (e) {
+      notif.checked = false;
+      toastError(e.message);
     }
-    o.notifications = notif.checked;
-    saveOpts();
   };
   const sample = (name) => h('button', { class: 'btn', type: 'button', style: { minWidth: '0' }, onclick: () => Sound.play(name, { force: true }) }, '▶');
   await dialog('Opties', h('div', null,
@@ -2506,8 +2962,12 @@ async function optionsDialog() {
       h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '6px' } }, 'Proberen:',
         [['IM', 'Bericht'], ['CALL_IN', 'Oproep'], ['ONLINE', 'Online'], ['LOGIN', 'Aanmelden'], ['HANGUP', 'Ophangen']].map(([n, l]) => h('span', null, sample(n), ' ', l, ' ')))),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Meldingen'),
-      h('label', null, notif, 'Systeemmeldingen als Skitta op de achtergrond staat'),
+      h('label', null, notif, Native.api ? 'Meldingen regelt de app zelf' : 'Pushmeldingen op dit apparaat (ook als Skitta dicht is)'),
+      isIos() && !isStandalone() ? h('p', { class: 'muted', style: { margin: '0 0 6px' } }, 'Op een iPhone werkt dit alleen als je Skitta op je beginscherm zet (Deel → Zet op beginscherm).') : null,
       cb('onlineToasts', 'Melding als een contactpersoon online komt')),
+    h('fieldset', { class: 'opt-group' }, h('legend', null, 'Thema'),
+      h('div', { class: 'theme-pick' }, THEMES.map(([id, label]) => h('label', null,
+        h('input', { type: 'radio', name: 'theme', checked: (o.theme || '') === id, onchange: () => setTheme(id) }), label)))),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Chatten'),
       cb('enterSends', 'Enter verstuurt het bericht (Shift+Enter voor een nieuwe regel)', true))),
   [{ label: 'OK', default: true, value: true }], { width: 480 });
@@ -2586,6 +3046,136 @@ function toastError(text) {
   toast({ title: 'Skitta', text, kind: 'error', plain: true });
 }
 
+// ---------- Meldingen: native apps, Web Push en meldingen terwijl Skitta open is ----------
+// In de Android- en desktop-apps bestaat window.SkittaNative (notify, badge, platform).
+
+const Native = {
+  get api() { return window.SkittaNative || null; },
+  notify(title, body, c = 0, kind = 'msg') {
+    if (!this.api) return false;
+    try { this.api.notify(String(title), String(body), String(c || 0), kind); return true; } catch { return false; }
+  },
+  badge(n) {
+    try { this.api?.badge(Number(n) || 0); } catch {}
+  },
+  platform() {
+    try { return this.api?.platform() || ''; } catch { return ''; }
+  }
+};
+
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function urlB64(s) {
+  const t = s.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(t + '='.repeat((4 - (t.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+
+const Push = {
+  supported() {
+    return !Native.api && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  },
+  async registration() {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+      await navigator.serviceWorker.register('/sw.js');
+      return await navigator.serviceWorker.ready;
+    } catch {
+      return null;
+    }
+  },
+  async state() {
+    if (!this.supported()) return 'unsupported';
+    const reg = await this.registration();
+    const sub = await reg?.pushManager.getSubscription().catch(() => null);
+    if (sub && Notification.permission === 'granted') return 'on';
+    return Notification.permission === 'denied' ? 'denied' : 'off';
+  },
+  async enable() {
+    if (!this.supported()) {
+      throw new Error(isIos() && !isStandalone()
+        ? 'Zet Skitta eerst op je beginscherm (Deel-knop → "Zet op beginscherm") en open het daarvandaan.'
+        : 'Deze browser ondersteunt geen pushmeldingen.');
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error('Je hebt meldingen niet toegestaan. Zet ze aan in de instellingen van je browser.');
+    const reg = await this.registration();
+    if (!reg) throw new Error('Meldingen konden niet worden aangezet');
+    const { key } = await api('GET', 'push/key');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(key) });
+    await api('POST', 'push', sub.toJSON());
+  },
+  async disable() {
+    const reg = await this.registration();
+    const sub = await reg?.pushManager.getSubscription().catch(() => null);
+    if (!sub) return;
+    await api('DELETE', 'push', { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  },
+  // Bij het opstarten: een bestaand abonnement aan dit account koppelen.
+  async sync() {
+    if (!this.supported() || Notification.permission !== 'granted') return;
+    const reg = await this.registration();
+    const sub = await reg?.pushManager.getSubscription().catch(() => null);
+    if (sub) api('POST', 'push', sub.toJSON()).catch(() => {});
+  }
+};
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.t === 'open' && e.data.c && S.convs.has(Number(e.data.c))) openConv(Number(e.data.c));
+  });
+}
+
+// Een melding tonen terwijl Skitta open is (maar niet in beeld).
+async function showLocal(title, body, c, kind = 'msg') {
+  if (Native.notify(title, body, c, kind)) return;
+  if (!S.opts.notifications || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const options = { body, icon: '/img/icon-192.png', badge: '/img/badge.png', tag: kind === 'call' ? 'call' : `c${c}`, data: { c }, requireInteraction: kind === 'call' };
+  try {
+    const reg = await Push.registration();
+    if (reg) return reg.showNotification(title, options);
+    const n = new Notification(title, options);
+    n.onclick = () => { window.focus(); if (c) openConv(c); n.close(); };
+  } catch {}
+}
+
+function pushCard() {
+  const card = h('div', { class: 'card', hidden: true }, h('h2', null, 'Meldingen'));
+  const body = h('div', { class: 'card-body' });
+  card.append(body);
+  (async () => {
+    if (Native.api) return;
+    const st = await Push.state();
+    if (st === 'on') return;
+    if (isIos() && !isStandalone()) {
+      body.append(h('p', { style: { margin: 0 } }, 'Wil je meldingen op je iPhone? Tik op de Deel-knop en kies ', h('b', null, 'Zet op beginscherm'), '. Open Skitta daarna vanaf je beginscherm en zet hier meldingen aan.'));
+    } else if (st === 'unsupported') {
+      return;
+    } else if (st === 'denied') {
+      body.append(h('p', { style: { margin: 0 } }, 'Meldingen zijn geblokkeerd. Zet ze aan in de instellingen van je browser voor skitta.timvanbergen.nl.'));
+    } else {
+      body.append(h('p', { style: { margin: '0 0 8px' } }, 'Krijg een melding bij nieuwe berichten en oproepen, ook als Skitta dicht is.'),
+        h('button', { class: 'btn default', onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            await Push.enable();
+            S.opts.notifications = true;
+            saveOpts();
+            card.remove();
+            toast({ title: 'Meldingen', text: 'Pushmeldingen staan aan op dit apparaat', plain: true });
+          } catch (err) {
+            e.target.disabled = false;
+            toastError(err.message);
+          }
+        } }, 'Meldingen aanzetten'));
+    }
+    card.hidden = false;
+  })();
+  return card;
+}
+
 // ---------- Bellen (WebRTC, één-op-één) ----------
 // Signalen gaan via de Hub: ring → accept (van één apparaat) → offer/answer/ice → hangup.
 // Audio en video krijgen allebei vanaf het begin een transceiver, zodat video aan/uit zetten
@@ -2597,6 +3187,7 @@ const Call = {
   muted: false,
   ice: null,
   lastMissedNotice: null,
+  ended: new Set(),
 
   async iceServers() {
     if (!this.ice || this.ice.at < Date.now() - 3600e3) {
@@ -2645,7 +3236,11 @@ const Call = {
     openConv(conv.id);
     Sound.play('CALL_INIT', { force: true });
     setTimeout(() => { if (this.active?.state === 'ringing') Sound.play('CALL_OUT', { loop: true, force: true }); }, 1200);
-    this.signal(peer, { type: 'ring', id: this.active.id, video, conv: conv.id });
+    const ring = { type: 'ring', id: this.active.id, video, conv: conv.id };
+    this.signal(peer, ring);
+    // Belsignaal herhalen: wie de app opent na een pushmelding, krijgt de oproep alsnog binnen.
+    const c0 = this.active;
+    c0.reRing = setInterval(() => { if (this.active === c0 && c0.state === 'ringing') this.signal(peer, ring); else clearInterval(c0.reRing); }, 4000);
     this.active.timeout = setTimeout(() => {
       if (this.active?.state === 'ringing') {
         this.signal(peer, { type: 'cancel', id: this.active.id });
@@ -2707,6 +3302,8 @@ const Call = {
         if (!c.started) {
           c.started = Date.now();
           c.tick = setInterval(() => this.updateTimer(), 1000);
+          c.statsTimer = setInterval(() => this.reportTurn(c), 60000);
+          this.limitBitrate(c);
         }
         c.state = 'active';
         this.refresh();
@@ -2735,6 +3332,7 @@ const Call = {
     const c = this.active;
     switch (d.type) {
       case 'ring': {
+        if (this.ended.has(d.id) || c?.id === d.id) return;
         if (c || this.incoming) {
           if (this.incoming?.id === d.id) return;
           this.signal(e.from, { type: 'busy', id: d.id }, e.dev);
@@ -2830,6 +3428,39 @@ const Call = {
     }
   },
 
+  // Via TURN (doorgestuurd)? Dan meten we hoeveel data dat kost en zetten de videokwaliteit lager.
+  async relayInfo(c) {
+    if (!c.pc) return { relay: false, bytes: 0 };
+    const stats = await c.pc.getStats().catch(() => null);
+    if (!stats) return { relay: false, bytes: 0 };
+    let pair = null;
+    stats.forEach((r) => { if (r.type === 'candidate-pair' && (r.nominated || r.selected) && r.state === 'succeeded') pair = r; });
+    if (!pair) return { relay: false, bytes: 0 };
+    const local = stats.get(pair.localCandidateId);
+    const remote = stats.get(pair.remoteCandidateId);
+    const relay = local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+    return { relay, bytes: (pair.bytesSent || 0) + (pair.bytesReceived || 0) };
+  },
+
+  async reportTurn(c) {
+    const info = await this.relayInfo(c);
+    if (!info.relay) return;
+    const fresh = info.bytes - (c.reported || 0);
+    c.reported = info.bytes;
+    if (fresh > 0) api('POST', 'usage/turn', { bytes: fresh }).catch(() => {});
+  },
+
+  async limitBitrate(c) {
+    const info = await this.relayInfo(c);
+    for (const sender of c.pc?.getSenders() || []) {
+      if (sender.track?.kind !== 'video' && sender.track !== null) continue;
+      const p = sender.getParameters();
+      if (!p.encodings?.length) p.encodings = [{}];
+      p.encodings[0].maxBitrate = info.relay ? 450_000 : 1_200_000;
+      sender.setParameters(p).catch(() => {});
+    }
+  },
+
   flushIce() {
     const c = this.active;
     for (const cand of c.pendingIce.splice(0)) c.pc.addIceCandidate(cand).catch(() => {});
@@ -2850,6 +3481,10 @@ const Call = {
     this.active = null;
     clearTimeout(c.timeout);
     clearInterval(c.tick);
+    clearInterval(c.reRing);
+    clearInterval(c.statsTimer);
+    this.ended.add(c.id);
+    this.reportTurn(c);
     Sound.stop('CALL_OUT');
     Sound.stop('CALL_RECONNECT_CONTINUOUS');
     if (!silent) Sound.play(reason === 'failed' ? 'CALL_ERROR1' : 'HANGUP', { force: true });
@@ -2893,6 +3528,7 @@ const Call = {
       }
     }
     c.video = !!c.local.getVideoTracks()[0];
+    this.limitBitrate(c);
     this.signal(c.peer, { type: 'media', id: c.id, video: c.video }, c.peerDev);
     this.refresh();
   },
@@ -2909,17 +3545,12 @@ const Call = {
         h('button', { class: 'sbtn blue', onclick: () => this.accept(true) }, svg('video'), 'Met video'),
         h('button', { class: 'sbtn red', onclick: () => this.decline() }, svg('hangup'), 'Weigeren')));
     document.body.append(box);
-    if (S.opts.notifications && document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        const n = new Notification(`${u.display_name} belt je`, { body: 'Skitta', icon: '/img/icon-192.png', tag: 'call', requireInteraction: true });
-        n.onclick = () => { window.focus(); n.close(); };
-        inc.notification = n;
-      } catch {}
-    }
+    if (document.visibilityState !== 'visible' || !document.hasFocus()) showLocal(`${u.display_name} belt je`, inc.video ? 'Videogesprek' : 'Gesprek', inc.conv, 'call');
     this.refresh();
   },
 
   dismissIncoming() {
+    if (this.incoming) this.ended.add(this.incoming.id);
     Sound.stop('CALL_IN');
     $('#incoming')?.remove();
     this.incoming?.notification?.close();
@@ -3045,4 +3676,5 @@ document.addEventListener('visibilitychange', () => {
 
 setupAuth();
 setupSide();
+setupNav();
 start();

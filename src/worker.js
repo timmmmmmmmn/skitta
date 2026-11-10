@@ -6,6 +6,8 @@ import {
   clearSessionCookie, sessionUser, tooManyAttempts, recordAttempt, clientIp, randomToken
 } from './util.js';
 import { Hub, effectivePresence } from './hub.js';
+import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport } from './limits.js';
+import { pushTo, vapidPublicKey } from './push.js';
 
 export { Hub };
 
@@ -16,9 +18,6 @@ const REASONS = ['spam', 'intimidatie', 'ongepast', 'nep', 'anders'];
 const MAX_TEXT = 8000;
 const MAX_GROUP = 50;
 const PAGE = 60;
-// D1 kan rijen tot 2 MB aan; met R2 mag een foto groter zijn.
-const MAX_PHOTO_D1 = 1_500_000;
-const MAX_PHOTO_R2 = 15_000_000;
 const EDIT_WINDOW = 24 * 3600e3;
 
 const hub = (env) => env.HUB.get(env.HUB.idFromName('hub'));
@@ -259,7 +258,7 @@ function sniffImage(bytes) {
 }
 
 async function readImage(env, request) {
-  const max = env.MEDIA ? MAX_PHOTO_R2 : MAX_PHOTO_D1;
+  const max = 600_000;
   const len = Number(request.headers.get('content-length') || 0);
   if (len > max) throw new HttpError(413, 'Deze foto is te groot');
   const buf = new Uint8Array(await request.arrayBuffer());
@@ -271,14 +270,14 @@ async function readImage(env, request) {
 }
 
 function mediaInsert(env, id, ownerId, convId, img, w, h) {
-  const inR2 = env.MEDIA ? 1 : 0;
+  const inR2 = 1;
   return env.DB.prepare(
     'INSERT INTO media (id, owner_id, conversation_id, mime, size, width, height, in_r2, data, created_at, enc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, ownerId, convId, img.mime, img.buf.length, w || null, h || null, inR2, inR2 ? null : img.buf, now(), img.enc ? 1 : 0);
+  ).bind(id, ownerId, convId, img.mime, img.buf.length, w || null, h || null, inR2, null, now(), img.enc ? 1 : 0);
 }
 
 async function readEncrypted(env, request) {
-  const max = (env.MEDIA ? MAX_PHOTO_R2 : MAX_PHOTO_D1) + 64;
+  const max = LIMITS.fileBytes + 64;
   if (Number(request.headers.get('content-length') || 0) > max) throw new HttpError(413, 'Deze foto is te groot');
   const buf = new Uint8Array(await request.arrayBuffer());
   if (buf.length < 29) throw new HttpError(400, 'Geen foto ontvangen');
@@ -286,14 +285,19 @@ async function readEncrypted(env, request) {
   return { buf, mime: 'application/octet-stream', enc: true };
 }
 
-async function mediaStore(env, id, img) {
-  if (env.MEDIA) await env.MEDIA.put(`media/${id}`, img.buf, { httpMetadata: { contentType: img.mime } });
+// Nieuwe bijlagen gaan altijd naar R2 (D1 is alleen nog voor oude foto's van vóór R2).
+async function mediaStore(env, uid, id, img) {
+  if (!env.MEDIA) throw new HttpError(503, 'Bijlagen versturen kan nu niet');
+  await checkUpload(env, uid, img.buf.length);
+  await env.MEDIA.put(`media/${id}`, img.buf, { httpMetadata: { contentType: img.mime } });
+  await env.DB.batch([bump(env, usageKey.write()), bump(env, usageKey.upload(uid), img.buf.length)]);
 }
 
 async function mediaDelete(env, ids) {
   const list = ids.filter(Boolean);
   if (!list.length) return;
   if (env.MEDIA) await env.MEDIA.delete(list.map((id) => `media/${id}`));
+  await Promise.all(list.map((id) => caches.default.delete(new Request(`https://media.skitta.internal/${id}`)).catch(() => {})));
   await env.DB.prepare(`DELETE FROM media WHERE id IN (${list.map(() => '?').join(',')})`).bind(...list).run();
 }
 
@@ -304,12 +308,25 @@ async function dropMedia(env, mediaId) {
   await mediaDelete(env, [mediaId]);
 }
 
+async function r2Bytes(env, id) {
+  const cacheKey = new Request(`https://media.skitta.internal/${id}`);
+  const hit = await caches.default.match(cacheKey);
+  if (hit) return new Uint8Array(await hit.arrayBuffer());
+  if (!(await canRead(env))) throw new HttpError(429, 'Skitta heeft deze maand te veel bijlagen geladen. Volgende maand kan het weer.');
+  const obj = await env.MEDIA?.get(`media/${id}`);
+  if (!obj) throw new HttpError(404, 'Niet gevonden');
+  const bytes = new Uint8Array(await obj.arrayBuffer());
+  const put = caches.default.put(cacheKey, new Response(bytes, { headers: { 'cache-control': 'public, max-age=2592000' } }));
+  const count = bump(env, usageKey.read()).run();
+  if (env.ctx) env.ctx.waitUntil(Promise.all([put, count]));
+  else await Promise.all([put, count]);
+  return bytes;
+}
+
 async function mediaResponse(env, row, cache = 'private, max-age=31536000, immutable') {
   let data = row.data;
   if (row.in_r2) {
-    const obj = await env.MEDIA?.get(`media/${row.id}`);
-    if (!obj) throw new HttpError(404, 'Niet gevonden');
-    data = obj.body;
+    data = await r2Bytes(env, row.id);
   } else if (Array.isArray(data)) {
     data = new Uint8Array(data);
   }
@@ -338,7 +355,7 @@ async function setAvatar(env, user, request) {
   const img = await readImage(env, request);
   if (img.buf.length > 600_000) throw new HttpError(413, 'Deze foto is te groot');
   const id = randomToken(18);
-  await mediaStore(env, id, img);
+  await mediaStore(env, user.id, id, img);
   await env.DB.batch([
     mediaInsert(env, id, user.id, null, img, 0, 0),
     env.DB.prepare('UPDATE users SET avatar_id = ? WHERE id = ?').bind(id, user.id)
@@ -352,6 +369,49 @@ async function removeAvatar(env, user) {
   await env.DB.prepare('UPDATE users SET avatar_id = NULL WHERE id = ?').bind(user.id).run();
   await mediaDelete(env, [user.avatar_id]);
   await notifyContacts(env, user.id, { t: 'contacts' });
+  return json({ ok: true });
+}
+
+// ---------- Pushmeldingen ----------
+
+// Alleen naar wie geen open (en actieve) Skitta heeft; anders meldt de app het zelf.
+async function pushAway(env, userIds, payload, opts) {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  if (!ids.length) return;
+  const states = await hub(env).states(ids);
+  const away = ids.filter((id) => !states[id]?.conns || states[id]?.idle);
+  if (away.length) await pushTo(env, away, payload, opts);
+}
+
+function later(env, promise) {
+  if (env.ctx) env.ctx.waitUntil(promise.catch((e) => console.error(e)));
+}
+
+async function pushMessage(env, user, conv, m) {
+  const others = (await activeMemberIds(env, conv.id)).filter((id) => id !== user.id);
+  const title = conv.kind === 'group' ? `${user.display_name} in ${conv.topic || 'een groep'}` : user.display_name;
+  const body = m.kind === 'call' ? 'Gemiste oproep' : m.kind === 'photo' ? 'Heeft een bijlage gestuurd' : 'Nieuw bericht';
+  if (m.kind === 'call' && !JSON.parse(m.body || '{}').missed) return;
+  await pushAway(env, others, { t: 'msg', c: conv.id, title, body, tag: `c${conv.id}` });
+}
+
+async function pushSubscribe(env, user, request) {
+  const b = await body(request);
+  const endpoint = str(b.endpoint, 1000);
+  if (!/^https:\/\//.test(endpoint)) throw new HttpError(400, 'Ongeldig abonnement');
+  const p256dh = str(b.keys?.p256dh, 200);
+  const auth = str(b.keys?.auth, 100);
+  if (!p256dh || !auth) throw new HttpError(400, 'Ongeldig abonnement');
+  await env.DB.prepare(
+    `INSERT INTO push_subs (endpoint, user_id, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`
+  ).bind(endpoint, user.id, p256dh, auth, now()).run();
+  return json({ ok: true });
+}
+
+async function pushUnsubscribe(env, user, request) {
+  const b = await body(request);
+  await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ? AND user_id = ?').bind(str(b.endpoint, 1000), user.id).run();
   return json({ ok: true });
 }
 
@@ -414,7 +474,10 @@ async function addContact(env, user, request) {
     ).bind(other.id, user.id, message, t));
   }
   await env.DB.batch(stmts);
-  if (theirs?.state !== 'blocked') await hub(env).notify([other.id], { t: 'contacts', request: user.id });
+  if (theirs?.state !== 'blocked') {
+    await hub(env).notify([other.id], { t: 'contacts', request: user.id });
+    later(env, pushAway(env, [other.id], { t: 'contact', title: user.display_name, body: 'wil je toevoegen als contactpersoon', tag: `r${user.id}` }));
+  }
   await hub(env).notify([user.id], { t: 'contacts' });
   return json({ state: 'out' }, 201);
 }
@@ -752,6 +815,7 @@ async function sendMessage(env, user, convId, request) {
   ]);
   const m = msgOut(res.results[0]);
   await hub(env).notify(await activeMemberIds(env, convId), { t: 'msg', m });
+  later(env, pushMessage(env, user, conv, res.results[0]));
   return json(m, 201);
 }
 
@@ -768,7 +832,7 @@ async function sendPhoto(env, user, convId, request, url) {
   const caption = enc ? checkEnvelope(request.headers.get('x-skitta-body'), conv) : str(url.searchParams.get('caption'), 1000);
   const id = randomToken(18);
   const t = now();
-  await mediaStore(env, id, img);
+  await mediaStore(env, user.id, id, img);
   const [, res] = await env.DB.batch([
     mediaInsert(env, id, user.id, convId, img, w, h),
     env.DB.prepare(
@@ -779,6 +843,7 @@ async function sendPhoto(env, user, convId, request, url) {
   ]);
   const m = msgOut({ ...res.results[0], width: w, height: h });
   await hub(env).notify(await activeMemberIds(env, convId), { t: 'msg', m });
+  later(env, pushMessage(env, user, conv, res.results[0]));
   return json(m, 201);
 }
 
@@ -873,17 +938,31 @@ async function reportMessage(env, user, id, request) {
 
 async function iceServers(env) {
   const servers = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
-  if (env.TURN_KEY_ID && env.TURN_KEY_TOKEN) {
+  if (env.TURN_KEY_ID && env.TURN_KEY_TOKEN && await turnAllowed(env)) {
     try {
       const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
         method: 'POST',
         headers: { authorization: `Bearer ${env.TURN_KEY_TOKEN}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ ttl: 86400 })
+        body: JSON.stringify({ ttl: 4 * 3600 })
       });
-      if (res.ok) return json((await res.json()).iceServers);
+      if (res.ok) {
+        // Alleen de TURN-adressen via UDP en TCP op 3478 en TLS op 443; de rest is dubbel.
+        const ice = (await res.json()).iceServers;
+        return json(Array.isArray(ice) ? ice : [ice]);
+      }
     } catch {}
   }
   return json(servers);
+}
+
+// De app meldt hoeveel data een gesprek via TURN ging, zodat we binnen het gratis budget blijven.
+async function reportTurn(env, user, request) {
+  const b = await body(request);
+  const bytes = Math.max(0, Math.min(300 * 1024 ** 2, Math.round(Number(b.bytes) || 0)));
+  if (await tooManyAttempts(env, `turn|${user.id}`, 10, 60e3)) return json({ ok: true });
+  await recordAttempt(env, `turn|${user.id}`);
+  if (bytes) await bump(env, usageKey.turn(), bytes).run();
+  return json({ ok: true });
 }
 
 // ---------- Beheer ----------
@@ -908,7 +987,9 @@ async function adminStats(env) {
     online: await hub(env).onlineCount(),
     messages: b.results[0].n, messages_today: c.results[0].n, open_reports: d.results[0].n,
     media: e.results[0].n, media_bytes: e.results[0].bytes, media_d1_bytes: e.results[0].d1,
-    conversations: f.results[0].n, r2: !!env.MEDIA,
+    conversations: f.results[0].n, r2: !!env.MEDIA, usage: await usageReport(env),
+    push_subs: (await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs').first()).n,
+    turn: !!(env.TURN_KEY_ID && env.TURN_KEY_TOKEN),
     registration: await setting(env, 'registration', 'open'),
     announcement: await setting(env, 'announcement', '')
   });
@@ -974,7 +1055,7 @@ async function adminReportMedia(env, id) {
   if (!row.enc) return mediaResponse(env, row, 'no-store');
   // Versleutelde foto: ontsleutelen met de sleutel die de melder meegaf.
   let data = row.data;
-  if (row.in_r2) data = new Uint8Array(await (await env.MEDIA.get(`media/${row.id}`)).arrayBuffer());
+  if (row.in_r2) data = await r2Bytes(env, row.id);
   else if (Array.isArray(data)) data = new Uint8Array(data);
   else data = new Uint8Array(data);
   let plain;
@@ -1044,6 +1125,23 @@ async function adminDeleteUser(env, admin, id) {
   return json({ ok: true });
 }
 
+// Bijlagen ouder dan zoveel maanden verwijderen om ruimte te maken (verwijderen kost niets in R2).
+async function adminCleanup(env, request) {
+  const b = await body(request);
+  const months = Math.max(1, Math.min(60, Number(b.months) || 12));
+  const before = now() - months * 30 * 86400e3;
+  const { results } = await env.DB.prepare(
+    'SELECT id FROM media WHERE conversation_id IS NOT NULL AND created_at < ? AND id NOT IN (SELECT media_id FROM reports WHERE media_id IS NOT NULL) LIMIT 1000'
+  ).bind(before).all();
+  const ids = results.map((r) => r.id);
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',');
+    await env.DB.prepare(`UPDATE messages SET media_id = NULL WHERE media_id IN (${marks})`).bind(...ids).run();
+    await mediaDelete(env, ids);
+  }
+  return json({ removed: ids.length });
+}
+
 async function adminSettings(env, request) {
   const b = await body(request);
   const stmts = [];
@@ -1102,6 +1200,10 @@ async function route(request, env, url) {
   }
   if (a === 'media' && b && m === 'GET') return getMedia(env, user, b);
   if (a === 'ice' && m === 'GET') return iceServers(env);
+  if (p === 'usage/turn' && m === 'POST') return reportTurn(env, user, request);
+  if (p === 'push/key' && m === 'GET') return json({ key: await vapidPublicKey(env) });
+  if (p === 'push' && m === 'POST') return pushSubscribe(env, user, request);
+  if (p === 'push' && m === 'DELETE') return pushUnsubscribe(env, user, request);
   if (a === 'keys' && m === 'GET') return listKeys(env, user, url);
 
   if (a === 'users' && b === 'search' && m === 'GET') return searchUsers(env, user, url);
@@ -1139,6 +1241,7 @@ async function route(request, env, url) {
     requireAdmin(user);
     if (b === 'stats' && m === 'GET') return adminStats(env);
     if (b === 'settings' && m === 'POST') return adminSettings(env, request);
+    if (b === 'cleanup' && m === 'POST') return adminCleanup(env, request);
     if (b === 'reports' && !c && m === 'GET') return adminReports(env, url);
     if (b === 'reports' && c && !d && m === 'POST') return adminDecide(env, user, Number(c), request);
     if (b === 'reports' && c && d === 'media' && m === 'GET') return adminReportMedia(env, Number(c));
@@ -1152,7 +1255,10 @@ async function route(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, rawEnv, ctx) {
+    // ctx meegeven zodat pushmeldingen en tellers na het antwoord kunnen afronden.
+    const env = Object.create(rawEnv);
+    env.ctx = ctx;
     const url = new URL(request.url);
     if (url.protocol === 'http:' && !env.DEV) {
       url.protocol = 'https:';

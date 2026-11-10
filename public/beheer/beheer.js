@@ -114,13 +114,32 @@ async function overviewView() {
       stat(s.messages, 'berichten totaal'),
       stat(s.conversations, 'gesprekken'),
       stat(s.blocked, 'geblokkeerd')),
-    h('h3', { style: 'font-weight:600;margin:0 0 6px' }, 'Foto-opslag'),
-    h('p', null, `${s.media} foto's, samen ${size(s.media_bytes)}. `,
-      s.r2 ? 'Foto\'s staan in R2 (Cloudflare-opslag).' : 'Foto\'s staan nu in de database (D1). Zet R2 aan voor veel foto\'s; zie de README.'),
-    s.r2 ? null : h('div', null, h('div', { class: 'bar-meter' }, h('div', { style: `width:${Math.min(100, (s.media_d1_bytes / d1Limit) * 100).toFixed(1)}%` })),
-      h('p', { class: 'muted' }, `${size(s.media_d1_bytes)} van ongeveer ${size(d1Limit)} (gratis limiet per database)`)),
+    h('h3', { style: 'font-weight:600;margin:0 0 6px' }, 'Verbruik (gratis grenzen van Cloudflare)'),
+    h('p', { class: 'muted', style: 'margin:0 0 10px' }, 'Skitta stopt zelf voordat een grens bereikt is, zodat er nooit kosten ontstaan. Bijlagen versturen of bellen via TURN kan dan tijdelijk niet.'),
+    meter('Opslag bijlagen (R2)', s.usage.r2_bytes, s.usage.r2_bytes_max, size),
+    meter('Bijlagen opgeslagen deze maand', s.usage.r2_writes, s.usage.r2_writes_max, (n) => n.toLocaleString('nl-NL')),
+    meter('Bijlagen geladen deze maand (zonder cache)', s.usage.r2_reads, s.usage.r2_reads_max, (n) => n.toLocaleString('nl-NL')),
+    meter('Bellen via TURN deze maand', s.usage.turn_bytes, s.usage.turn_bytes_max, size),
+    h('p', { class: 'muted' }, s.turn ? 'TURN staat aan.' : 'TURN staat uit (alleen rechtstreeks bellen).', ` ${s.push_subs} apparaten met pushmeldingen.`),
+    h('div', { class: 'line', style: 'display:flex;gap:8px;align-items:center;margin:6px 0 16px' },
+      h('span', null, 'Bijlagen opruimen ouder dan'),
+      (() => { const sel = h('select', { class: 'field', id: 'cleanup-months' }, [3, 6, 12, 24].map((m) => h('option', { value: m, selected: m === 12 }, `${m} maanden`))); return sel; })(),
+      h('button', { class: 'btn', onclick: async () => {
+        const months = Number($('#cleanup-months').value);
+        if (!(await confirmBox('Opruimen', `Alle foto's, video's en bestanden ouder dan ${months} maanden definitief verwijderen? De berichten blijven staan.`, 'Opruimen'))) return;
+        const r = await api('POST', 'admin/cleanup', { months });
+        infoBox('Opgeruimd', h('p', null, `${r.removed} bijlagen verwijderd.`));
+        render();
+      } }, 'Opruimen')),
     h('h3', { style: 'font-weight:600;margin:16px 0 6px' }, 'Registratie'),
     h('p', null, s.registration === 'open' ? 'Iedereen kan een account maken.' : 'Nieuwe accounts maken is uitgeschakeld.', ' ', h('a', { href: '#instellingen', onclick: (e) => { e.preventDefault(); setTab('instellingen'); } }, 'Wijzigen')));
+}
+
+function meter(label, value, max, fmt) {
+  const pct = Math.min(100, (value / max) * 100);
+  return h('div', { style: 'margin-bottom:10px' },
+    h('div', { style: 'display:flex;justify-content:space-between;max-width:400px' }, h('span', null, label), h('span', { class: 'muted' }, `${fmt(value)} / ${fmt(max)}`)),
+    h('div', { class: 'bar-meter' }, h('div', { style: `width:${pct.toFixed(1)}%;${pct > 80 ? 'background:#e8423a' : ''}` })));
 }
 
 // ---------- Meldingen ----------

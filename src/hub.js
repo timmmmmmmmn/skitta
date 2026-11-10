@@ -4,6 +4,7 @@
 // attachment wie het is ({ uid, dev, idle }).
 
 import { DurableObject } from 'cloudflare:workers';
+import { pushTo } from './push.js';
 
 const tag = (uid) => `u${uid}`;
 
@@ -132,8 +133,25 @@ export class Hub extends DurableObject {
       }
       const event = { t: 'call', from: a.uid, dev: a.dev, d: m.d };
       const n = this.send([to], event, to === a.uid ? { notDev: a.dev } : { dev: m.dev || undefined });
-      if (!n && m.d.type === 'ring') ws.send(JSON.stringify({ t: 'call', from: to, d: { type: 'offline', id: m.d.id } }));
+      if (!n && m.d.type === 'ring' && to !== a.uid) await this.ringAway(ws, a.uid, to, m.d);
     }
+  }
+
+  // Niemand van de gebelde persoon is online: met een pushmelding wakker maken (één keer per oproep).
+  // De beller blijft het belsignaal herhalen, dus wie de app binnen de beltijd opent, kan opnemen.
+  async ringAway(ws, from, to, d) {
+    const subs = await this.env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs WHERE user_id = ?').bind(to).first();
+    if (!subs.n) {
+      ws.send(JSON.stringify({ t: 'call', from: to, d: { type: 'offline', id: d.id } }));
+      return;
+    }
+    this.pushed ||= new Set();
+    if (this.pushed.has(d.id)) return;
+    this.pushed.add(d.id);
+    const caller = await this.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(from).first();
+    this.ctx.waitUntil(pushTo(this.env, [to], {
+      t: 'call', title: caller?.display_name || 'Skitta', body: d.video ? 'wil met je videobellen' : 'belt je', tag: 'call', c: Number(d.conv) || 0
+    }, { ttl: 45 }).catch(() => {}));
   }
 
   async webSocketClose(ws, code) {
