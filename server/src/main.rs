@@ -39,15 +39,15 @@ struct Config {
 /// Het token mag ook als ?t=... meekomen (voor downloads); eigen kleine parser, geen serde nodig.
 struct TokenQuery {
     t: Option<String>,
+    offset: u64,
 }
 
 impl axum::extract::FromRequestParts<Arc<Config>> for TokenQuery {
     type Rejection = std::convert::Infallible;
     async fn from_request_parts(parts: &mut axum::http::request::Parts, _: &Arc<Config>) -> Result<Self, Self::Rejection> {
-        let t = parts.uri.query().and_then(|q| {
-            q.split('&').find_map(|kv| kv.strip_prefix("t=").map(|v| v.to_string()))
-        });
-        Ok(TokenQuery { t })
+        let query = parts.uri.query().unwrap_or("");
+        let get = |key: &str| query.split('&').find_map(|kv| kv.strip_prefix(key).map(|v| v.to_string()));
+        Ok(TokenQuery { t: get("t="), offset: get("offset=").and_then(|v| v.parse().ok()).unwrap_or(0) })
     }
 }
 
@@ -98,6 +98,8 @@ async fn used_bytes(dir: &PathBuf) -> u64 {
     total
 }
 
+/// Uploaden in delen: PUT /f/<id>?offset=N. Elk deel moet precies aansluiten op wat er al is;
+/// zodra alles binnen is (grootte uit het token) wordt het bestand definitief (201), anders 202.
 async fn upload(State(cfg): State<Arc<Config>>, Path(id): Path<String>, q: TokenQuery, headers: HeaderMap, body: Body) -> Response {
     if !valid_id(&id) {
         return StatusCode::BAD_REQUEST.into_response();
@@ -109,18 +111,22 @@ async fn upload(State(cfg): State<Arc<Config>>, Path(id): Path<String>, q: Token
     if path.exists() {
         return StatusCode::CONFLICT.into_response();
     }
-    if used_bytes(&cfg.dir).await + size > cfg.max_bytes {
+    let tmp = cfg.dir.join(format!(".{id}.deel"));
+    let have = tokio::fs::metadata(&tmp).await.map(|m| m.len()).unwrap_or(0);
+    if q.offset != have {
+        return (StatusCode::CONFLICT, format!("verwacht offset {have}")).into_response();
+    }
+    if q.offset == 0 && used_bytes(&cfg.dir).await + size > cfg.max_bytes {
         return (StatusCode::INSUFFICIENT_STORAGE, "De bestandsserver is vol").into_response();
     }
-    let tmp = cfg.dir.join(format!(".{id}.deel"));
-    let Ok(mut file) = tokio::fs::File::create(&tmp).await else {
+    let file = tokio::fs::OpenOptions::new().create(true).append(true).open(&tmp).await;
+    let Ok(mut file) = file else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let mut stream = body.into_data_stream();
-    let mut written: u64 = 0;
+    let mut written = have;
     while let Some(chunk) = stream.next().await {
         let Ok(chunk) = chunk else {
-            let _ = tokio::fs::remove_file(&tmp).await;
             return StatusCode::BAD_REQUEST.into_response();
         };
         written += chunk.len() as u64;
@@ -130,8 +136,13 @@ async fn upload(State(cfg): State<Arc<Config>>, Path(id): Path<String>, q: Token
             return StatusCode::PAYLOAD_TOO_LARGE.into_response();
         }
     }
-    if file.flush().await.is_err() || tokio::fs::rename(&tmp, &path).await.is_err() {
-        let _ = tokio::fs::remove_file(&tmp).await;
+    if file.flush().await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if written < size {
+        return StatusCode::ACCEPTED.into_response();
+    }
+    if tokio::fs::rename(&tmp, &path).await.is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
     StatusCode::CREATED.into_response()

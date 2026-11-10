@@ -2159,7 +2159,7 @@ async function prepareImage(file, max = 1600, quality = 0.85) {
 // Alles wordt eerst verkleind (foto's naar max. 1600 px JPEG, video's naar max. 960 px en ~700 kbit/s)
 // en daarna versleuteld. De beschrijving (soort, naam, grootte, duur) zit in de versleutelde tekst.
 
-const MAX_FILE = 25 * 1024 * 1024;
+const MAX_FILE = 5 * 1024 * 1024;
 const MAX_VIDEO_SECONDS = 180;
 const MAX_VOICE_SECONDS = 300;
 
@@ -2196,10 +2196,10 @@ async function prepareVideo(file, onProgress) {
     const w0 = v.videoWidth;
     const h0 = v.videoHeight;
     if (Number.isFinite(dur) && dur > MAX_VIDEO_SECONDS) throw new Error(`Video's mogen maximaal ${MAX_VIDEO_SECONDS / 60} minuten duren`);
-    const small = (file.size <= 8 * 1024 * 1024 && Math.max(w0, h0) <= 1280) || (S.me.big_files && file.size <= 1024 ** 3);
+    const small = (file.size <= 4 * 1024 * 1024 && Math.max(w0, h0) <= 1280) || (S.me.big_files && file.size <= 1024 ** 3);
     const canRecord = window.MediaRecorder && HTMLCanvasElement.prototype.captureStream;
     if (small || !canRecord) {
-      if (file.size > MAX_FILE && !S.me.big_files) throw new Error('Deze video is te groot (max. 25 MB)');
+      if (file.size > MAX_FILE && !S.me.big_files) throw new Error('Deze video is te groot (max. 5 MB)');
       return { blob: file, w: w0, h: h0, dur, mime: file.type };
     }
     const scale = Math.min(1, 960 / Math.max(w0, h0));
@@ -2236,7 +2236,7 @@ async function prepareVideo(file, onProgress) {
     await done;
     if (v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(raf); else cancelAnimationFrame(raf);
     const blob = new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
-    if (blob.size > MAX_FILE) throw new Error('Deze video is na verkleinen nog te groot (max. 25 MB)');
+    if (blob.size > MAX_FILE && !S.me.big_files) throw new Error('Deze video is na verkleinen nog te groot (max. 5 MB)');
     return { blob: blob.size < file.size ? blob : file, w, h: hh, dur, mime: blob.size < file.size ? blob.type : file.type };
   } finally {
     URL.revokeObjectURL(url);
@@ -2278,7 +2278,7 @@ async function sendFile(convId, file, extra = {}, existing) {
       meta.dur = Math.round(vid.dur || 0);
       meta.mime = vid.mime;
     } else if (file.size > (S.me.big_files ? 1024 ** 3 : MAX_FILE)) {
-      throw new Error(S.me.big_files ? 'Bestanden mogen maximaal 1 GB zijn' : 'Bestanden mogen maximaal 25 MB zijn');
+      throw new Error(S.me.big_files ? 'Bestanden mogen maximaal 1 GB zijn' : 'Bestanden mogen maximaal 5 MB zijn');
     }
     meta.size = blob.size;
     local.w = w;
@@ -2292,7 +2292,7 @@ async function sendFile(convId, file, extra = {}, existing) {
       renderList();
       return;
     }
-    if (blob.size > MAX_FILE) throw new Error('Bestanden boven 25 MB kunnen pas als de bestandsserver aanstaat');
+    if (blob.size > MAX_FILE) throw new Error('Bestanden boven 5 MB kunnen pas als de bestandsserver aanstaat');
     const text = JSON.stringify(meta);
     const sealed = await E2E.encrypt(convId, text, new Uint8Array(await blob.arrayBuffer()));
     const res = await fetch(`/api/conversations/${convId}/photo?enc=1&w=${w}&h=${hgt}&cid=${cid}`, {
@@ -2326,18 +2326,23 @@ async function sendBig(convId, blob, meta, local, cid) {
   if (S.cur === convId) renderMessages({ keepScroll: true });
   const sealedBlob = await E2E.sealChunks(await aesKey(mk), blob);
   const ticket = await api('POST', `conversations/${convId}/big`, { size: sealedBlob.size });
-  await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', ticket.url);
-    xhr.setRequestHeader('authorization', `Bearer ${ticket.token}`);
-    xhr.upload.onprogress = (e) => {
-      const el = document.querySelector(`[data-cid="${cid}"] .progress`);
-      if (el && e.total) el.textContent = `Uploaden… ${Math.round((e.loaded / e.total) * 100)}%`;
-    };
-    xhr.onload = () => (xhr.status === 201 ? resolve() : reject(new Error('Uploaden naar de bestandsserver is mislukt')));
-    xhr.onerror = () => reject(new Error('De bestandsserver is niet bereikbaar'));
-    xhr.send(sealedBlob);
-  });
+  // In delen van 50 MB (een Cloudflare Tunnel neemt maximaal 100 MB per verzoek aan).
+  const PART = 50 * 1024 * 1024;
+  for (let offset = 0; offset < sealedBlob.size; offset += PART) {
+    const part = sealedBlob.slice(offset, offset + PART);
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `${ticket.url}?offset=${offset}`);
+      xhr.setRequestHeader('authorization', `Bearer ${ticket.token}`);
+      xhr.upload.onprogress = (e) => {
+        const el = document.querySelector(`[data-cid="${cid}"] .progress`);
+        if (el) el.textContent = `Uploaden… ${Math.round(((offset + e.loaded) / sealedBlob.size) * 100)}%`;
+      };
+      xhr.onload = () => ([201, 202].includes(xhr.status) ? resolve() : reject(new Error('Uploaden naar de bestandsserver is mislukt')));
+      xhr.onerror = () => reject(new Error('De bestandsserver is niet bereikbaar'));
+      xhr.send(part);
+    });
+  }
   meta.big = ticket.id;
   meta.until = ticket.expires_at;
   const text = JSON.stringify(meta);

@@ -11,8 +11,8 @@ export const LIMITS = {
   r2Writes: 500_000, // per maand
   r2Reads: 5_000_000, // per maand (de meeste komen uit de cache)
   turnBytes: 400 * 1000 ** 3, // per maand
-  userDailyBytes: 200 * 1024 ** 2, // uploads per persoon per dag
-  fileBytes: 25 * 1024 ** 2 // per bijlage (de apps verkleinen foto's en video's eerst)
+  userDailyBytes: 50 * 1024 ** 2, // uploads per persoon per dag
+  fileBytes: 5 * 1024 ** 2 // per bijlage; groter gaat naar de eigen bestandsserver
 };
 
 const month = () => new Date().toISOString().slice(0, 7);
