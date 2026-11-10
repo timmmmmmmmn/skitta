@@ -309,6 +309,41 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private var offline = false
+
+    private fun showOffline() {
+        offline = true
+        val dark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val bg = if (dark) "#121416" else "#ffffff"
+        val fg = if (dark) "#e9ecef" else "#1b1b1b"
+        val html = """<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+            <body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:$bg;color:$fg;font:16px -apple-system,Roboto,sans-serif;text-align:center;padding:24px;box-sizing:border-box">
+            <div style="font-size:54px">📡</div><b style="font-size:20px">Geen verbinding</b>
+            <div style="opacity:.7">Skitta probeert het vanzelf opnieuw zodra je weer internet hebt.</div>
+            <button onclick="SkittaNative.retry()" style="margin-top:8px;border:0;border-radius:22px;padding:12px 26px;background:#0a93d1;color:#fff;font-size:16px;font-weight:600">Opnieuw proberen</button>
+            </body>"""
+        web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+        watchNetwork()
+    }
+
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    private fun watchNetwork() {
+        if (networkCallback != null) return
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                runOnUiThread { if (offline) retry() }
+            }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(networkCallback!!) }
+    }
+
+    fun retry() {
+        offline = false
+        web.loadUrl(HOME)
+    }
+
     private fun onOurSite(): Boolean = web.url?.let { Uri.parse(it).host == HOST } ?: false
 
     override fun onResume() {
@@ -357,6 +392,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        networkCallback?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(cb) } }
         web.destroy()
         super.onDestroy()
     }
@@ -490,6 +526,11 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun retry() {
+            runOnUiThread { this@MainActivity.retry() }
+        }
+
+        @JavascriptInterface
         fun hideConnection() {
             runOnUiThread { runCatching { startActivity(Meldingen.hideConnectionIntent(this@MainActivity)) } }
         }
@@ -605,6 +646,12 @@ class MainActivity : ComponentActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             pushInsets()
             CookieManager.getInstance().flush()
+        }
+
+        // Geen internet: een nette pagina in plaats van een foutscherm, en vanzelf opnieuw zodra er weer verbinding is.
+        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+            if (!request.isForMainFrame) return
+            showOffline()
         }
     }
 
