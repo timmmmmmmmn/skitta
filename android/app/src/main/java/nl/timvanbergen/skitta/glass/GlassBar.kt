@@ -184,7 +184,7 @@ class GlassBar internal constructor(private val overlay: GlassMenuOverlay, resou
     fill.color = if (dark) Color.argb(46, 255, 255, 255) else Color.argb(26, 11, 13, 16)
     plate.set(slide.value, inset, slide.value + cell, height - inset)
     canvas.drawRoundRect(plate, radius, radius, fill)
-    val accent = if (dark) Color.rgb(240, 124, 128) else Color.rgb(165, 28, 34)
+    val accent = if (dark) Color.rgb(108, 200, 245) else Color.rgb(0, 137, 199)
     val muted = if (dark) Color.argb(235, 242, 243, 245) else Color.argb(225, 11, 13, 16)
     tabs.forEachIndexed { index, tab ->
       val color = if (tab.id == active) accent else muted
@@ -197,7 +197,7 @@ class GlassBar internal constructor(private val overlay: GlassMenuOverlay, resou
 
   private fun drawAdd(canvas: Canvas) {
     val bounds = add.placement
-    drawIcon(canvas, "plus", bounds.width() / 2f, bounds.height() / 2f, 26f, Color.rgb(251, 246, 220), 2.6f)
+    drawIcon(canvas, "plus", bounds.width() / 2f, bounds.height() / 2f, 26f, Color.rgb(255, 255, 255), 2.6f)
   }
 
   private fun drawIcon(canvas: Canvas, name: String, centerX: Float, centerY: Float, size: Float, color: Int, weight: Float) {

@@ -55,6 +55,11 @@ class SkittaService : Service() {
         super.onCreate()
         running = true
         Meldingen.channels(this)
+        goForeground()
+    }
+
+    // Na elke startForegroundService() moet de dienst opnieuw startForeground() aanroepen.
+    private fun goForeground() {
         val ongoing = Notification.Builder(this, Meldingen.CH_VERBINDING)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Skitta is verbonden")
@@ -70,6 +75,7 @@ class SkittaService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        goForeground()
         if (intent?.action == ACTION_CLEAR) {
             val c = intent.getLongExtra("c", 0L)
             if (c != 0L) unread.remove(c) else unread.clear()

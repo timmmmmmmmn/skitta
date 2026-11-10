@@ -161,6 +161,8 @@ class MainActivity : ComponentActivity() {
         }
 
         applySecure()
+        // Alleen in testbuilds (tegen wrangler dev) de WebView te inspecteren.
+        if (BuildConfig.SITE.startsWith("http://")) WebView.setWebContentsDebuggingEnabled(true)
         val root = FrameLayout(this)
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -329,6 +331,11 @@ class MainActivity : ComponentActivity() {
         Updater.installIfReady(this)
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        web.evaluateJavascript("window.applyMode && applyMode()", null)
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         web.saveState(outState)
@@ -430,6 +437,21 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun signedOut() {
             stopService(Intent(this@MainActivity, SkittaService::class.java))
+        }
+
+        /** Of de telefoon op donker staat (voor "automatisch"). */
+        @JavascriptInterface
+        fun systemDark(): Boolean =
+            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        /** Donkere modus: lichte statusbalk-iconen en een donkere achtergrond. */
+        @JavascriptInterface
+        fun setDark(dark: Boolean) {
+            runOnUiThread {
+                bars.isAppearanceLightStatusBars = !dark
+                bars.isAppearanceLightNavigationBars = !dark
+                web.setBackgroundColor(if (dark) Color.rgb(18, 20, 22) else Color.WHITE)
+            }
         }
 
         @JavascriptInterface

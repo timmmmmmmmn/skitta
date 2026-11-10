@@ -166,3 +166,76 @@
   .incoming { border-radius: 18px; }
 }
 @media (max-width: 720px) { .msg.call .from, .msg.sys .from { display: none !important; } .msg.call > .time { display: none; } }
+
+/* ---------- App: kop met blur in plaats van een lege balk ---------- */
+@media (max-width: 720px) {
+  html.app-mode .side { overflow-y: auto; }
+  html.app-mode .side .list { flex: none; overflow: visible; }
+  html.app-mode .me {
+    position: sticky; top: 0; z-index: 6;
+    background: var(--m-glass, rgba(255, 255, 255, .72));
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  }
+  html.app-mode .pane { position: relative; }
+  html.app-mode .conv-head {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+    background: var(--m-glass, rgba(255, 255, 255, .72)); border-bottom-color: transparent;
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  }
+  html.app-mode .pane > .chat:nth-child(2) { padding-top: calc(var(--head-h, 64px) + 6px); }
+  html.app-mode .pane > :nth-child(2):not(.chat) { margin-top: var(--head-h, 64px); }
+  html.app-mode .home-head { padding-top: calc(18px + var(--sat, 0px)); }
+}
+
+/* ---------- Donkere modus (telefoon) ---------- */
+@media (max-width: 720px) {
+  html[data-mode="dark"] {
+    --m-blue: #2ea6e3; --m-bubble: #1677b0; --m-other: #262a2e; --m-text: #e9ecef; --m-muted: #9aa3ab;
+    --m-glass: rgba(18, 20, 22, .72); --text: #e9ecef; --muted: #9aa3ab; --line: #2a2f34; --line-soft: #24282c; --link: #5cc1f2;
+    color-scheme: dark;
+  }
+  html[data-mode="dark"] body, html[data-mode="dark"] .app, html[data-mode="dark"] .side, html[data-mode="dark"] .pane,
+  html[data-mode="dark"] .chat, html[data-mode="dark"] .compose, html[data-mode="dark"] .home, html[data-mode="dark"] .list { background: #121416; color: var(--m-text); }
+  html[data-mode="dark"] .me, html[data-mode="dark"] .conv-head { background: #121416; color: var(--m-text); border-color: #24282c; }
+  html[data-mode="dark"].app-mode .me, html[data-mode="dark"].app-mode .conv-head { background: var(--m-glass); }
+  html[data-mode="dark"] .me-status, html[data-mode="dark"] .conv-head h1, html[data-mode="dark"] .row .name { color: var(--m-text); }
+  html[data-mode="dark"] .conv-head .sbtn, html[data-mode="dark"] .conv-head .back svg, html[data-mode="dark"] .more-btn svg { color: var(--m-text); fill: var(--m-text); }
+  html[data-mode="dark"] .search input, html[data-mode="dark"] .m-field { background-color: #24282c; color: var(--m-text); }
+  html[data-mode="dark"] .compose-box textarea { color: var(--m-text); }
+  html[data-mode="dark"] .row:active { background: #1c2024 !important; }
+  html[data-mode="dark"] .e2e-note { background: #1c2024; color: var(--m-muted); }
+  html[data-mode="dark"] .msg.gone .text { border-color: #2f3439; }
+  html[data-mode="dark"] .react { background: #24282c; border-color: #121416; color: var(--m-text); }
+  html[data-mode="dark"] .react.mine { background: #12384d; }
+  html[data-mode="dark"] .msg .att-file { background: #2f3439; color: var(--m-text) !important; }
+  html[data-mode="dark"] .compose .editing, html[data-mode="dark"] .compose .reply { background: #1c2024; }
+  html[data-mode="dark"] .mnav-pill { background: #1c2024; border-color: #2a2f34; }
+  html[data-mode="dark"] .mnav-pill button.on { background: #12384d; color: #6cc8f5; }
+  html[data-mode="dark"] .sheet, html[data-mode="dark"] .dialog, html[data-mode="dark"] .dialog .dfoot, html[data-mode="dark"] .menu { background: #1c2024; color: var(--m-text); }
+  html[data-mode="dark"] .sheet-item { color: var(--m-text); }
+  html[data-mode="dark"] .sheet-item:active, html[data-mode="dark"] .menu .mi:hover { background: #262a2e !important; }
+  html[data-mode="dark"] .sheet-reacts { border-color: #2a2f34; }
+  html[data-mode="dark"] .sheet-reacts button { background: #262a2e; }
+  html[data-mode="dark"] .dialog .dbody { background: #1c2024; }
+  html[data-mode="dark"] .dialog .btn, html[data-mode="dark"] .btn { background: #262a2e; color: var(--m-text); border-color: #2f3439; }
+  html[data-mode="dark"] .dialog .btn.default { background: var(--m-blue); color: #fff; }
+  html[data-mode="dark"] .field, html[data-mode="dark"] .pick-list, html[data-mode="dark"] .results { background: #262a2e; color: var(--m-text); border-color: #2f3439; }
+  html[data-mode="dark"] .card, html[data-mode="dark"] .card h2 { background: #1c2024; color: var(--m-text); border-color: #2a2f34; }
+  html[data-mode="dark"] .card.announce h2 { color: #e8d68c; }
+  html[data-mode="dark"] .opt-group { border-color: #2f3439; }
+  html[data-mode="dark"] .opt-group legend, html[data-mode="dark"] .dialog h3 { color: #8fd0f2; }
+  html[data-mode="dark"] .toast { background: #1c2024; border-color: #2f3439; color: var(--m-text); }
+  html[data-mode="dark"] .toast .t2 { color: var(--m-muted); }
+  html[data-mode="dark"] .notice, html[data-mode="dark"] .findbar { background: #2a2614; border-color: #4a4120; color: #e8d68c; }
+  html[data-mode="dark"] .auth { background: linear-gradient(#121416, #0c2230); }
+  html[data-mode="dark"] .auth-form label, html[data-mode="dark"] .auth-form .check { color: var(--m-text); }
+  html[data-mode="dark"] .auth-logo { mix-blend-mode: normal; border-radius: 24px; }
+  html[data-mode="dark"] .avatar.none { background-color: #2f3439; }
+  html[data-mode="dark"] .list-av .st { box-shadow: 0 0 0 2px #121416; }
+  html[data-mode="dark"] .safety { background: #1c2024; border-color: #2f3439; }
+}
+@media (max-width: 720px) {
+  .chat:not(.group) .msg .from { display: none !important; }
+  .compose-box textarea { line-height: 20px; padding: 11px 8px 11px 2px; box-sizing: border-box; }
+  .m-field { align-items: flex-end; }
+}

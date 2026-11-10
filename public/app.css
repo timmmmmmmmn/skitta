@@ -567,7 +567,7 @@ mark { background: #ffe25c; color: inherit; border-radius: 2px; }
   }
   /* In de app: de glazen balk ligt eroverheen, de pagina houdt alleen de plek vrij. */
   html.native .mnav-pill, html.native .mnav-add { opacity: 0; }
-  html.native .app { padding-top: var(--sat, 0px); }
+
   html.native .compose { padding-bottom: max(8px, var(--sab, 0px)); }
 }
 @media (max-width: 720px) { .home-link { display: none; } }

@@ -1555,6 +1555,7 @@ function renderPane() {
   renderMessages();
   renderTyping();
   setupDrop(pane, conv);
+  requestAnimationFrame(() => { measureHead(); renderMessages(); });
 }
 
 function renderHead() {
@@ -1692,6 +1693,7 @@ function renderMessages({ keepScroll = false } = {}) {
   const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
   const prevTop = chat.scrollTop;
   chat.replaceChildren();
+  chat.classList.toggle('group', conv.kind === 'group');
   if (b.loaded && b.more) chat.append(h('button', { class: 'btn more', onclick: () => loadOlder(conv.id) }, 'Eerdere berichten laden'));
   if (b.loaded && !b.more) chat.append(h('div', { class: 'e2e-note' }, '🔒 Berichten en foto\'s in dit gesprek zijn end-to-end versleuteld. Alleen de mensen in dit gesprek kunnen ze lezen.'));
   if (!b.loaded) chat.append(h('div', { class: 'day' }, 'Laden…'));
@@ -2018,7 +2020,9 @@ function sendIcon() {
 
 function autoGrow(ta) {
   ta.style.height = 'auto';
-  ta.style.height = `${Math.min(160, Math.max(44, ta.scrollHeight + 2))}px`;
+  const min = mobile() ? 42 : 44;
+  ta.style.height = `${min}px`;
+  ta.style.height = `${Math.min(160, Math.max(min, ta.scrollHeight + (mobile() ? 0 : 2)))}px`;
 }
 
 function saveDraft() {
@@ -2534,7 +2538,7 @@ function glassMenu(items, x, y, anchor) {
   while (rows.at(-1)?.separator) rows.pop();
   const r = anchor?.getBoundingClientRect?.() || { left: x, top: y, width: 1, height: 1 };
   try {
-    return !!nat.glassMenu(JSON.stringify({ x: r.left, y: r.top, w: r.width, h: r.height, dark: false, items: rows }));
+    return !!nat.glassMenu(JSON.stringify({ x: r.left, y: r.top, w: r.width, h: r.height, dark: document.documentElement.dataset.mode === 'dark', items: rows }));
   } catch {
     return false;
   }
@@ -2888,6 +2892,7 @@ function moreMenu(anchor) {
   popMenu([
     { label: 'Online-status', sub: presenceItems() },
     { label: 'Profiel bewerken…', icon: 'user', run: profileDialog },
+    { label: 'Weergave', sub: modeItems() },
     { label: 'Opties…', run: optionsDialog },
     { label: 'Geblokkeerde contactpersonen…', icon: 'block', run: blockedDialog },
     S.me.is_admin && { label: 'Beheer…', run: () => window.open('/beheer', '_blank') },
@@ -2922,7 +2927,7 @@ function glassBar() {
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
   try {
     api.glassBar(JSON.stringify({
-      pill: box(pill), add: box(add), active: navActive(), dark: false, visible,
+      pill: box(pill), add: box(add), active: navActive(), dark: document.documentElement.dataset.mode === 'dark', visible,
       tabs: [
         { id: 'recent', title: unread ? `Chats (${unread})` : 'Chats', icon: ICONS.chat },
         { id: 'contacts', title: 'Contacten', icon: ICONS.user },
@@ -2934,9 +2939,43 @@ function glassBar() {
 }
 
 window.skittaGlassNav = (id) => navTo(id);
-window.addEventListener('resize', () => renderNav());
+window.addEventListener('resize', () => { renderNav(); measureHead(); });
+
+// ---------- Licht of donker (telefoon) ----------
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function applyMode() {
+  const pref = S.opts.mode || 'auto';
+  let system = darkQuery.matches;
+  try { if (Native.api?.systemDark) system = Native.api.systemDark(); } catch {}
+  const dark = pref === 'dark' || (pref === 'auto' && system);
+  document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark && mobile() ? '#121416' : '#00aff0');
+  try { Native.api?.setDark?.(dark); } catch {}
+  glassBar();
+}
+darkQuery.addEventListener?.('change', applyMode);
+
+function setMode(mode) {
+  S.opts.mode = mode;
+  saveOpts();
+  applyMode();
+}
+
+function modeItems() {
+  return [['auto', 'Automatisch (zoals je telefoon)'], ['light', 'Licht'], ['dark', 'Donker']]
+    .map(([id, label]) => ({ label, checked: (S.opts.mode || 'auto') === id, run: () => setMode(id) }));
+}
+
+// Kopje met blur: hoogte doorgeven zodat de berichten eronder beginnen.
+function measureHead() {
+  const head = $('#conv-head');
+  if (head) $('#pane').style.setProperty('--head-h', `${head.offsetHeight}px`);
+}
 
 function setupNav() {
+  if (Native.api || isStandalone()) document.documentElement.classList.add('app-mode');
+  applyMode();
   for (const el of document.querySelectorAll('.mi-svg[data-icon]')) el.append(svg(el.dataset.icon));
   for (const b of document.querySelectorAll('#mnav [data-nav]')) b.onclick = () => navTo(b.dataset.nav);
   if (Native.api) document.documentElement.classList.add('native');
@@ -3367,6 +3406,9 @@ async function optionsDialog() {
       })() : h('label', null, notif, Native.api ? 'Meldingen regelt de app zelf' : 'Pushmeldingen op dit apparaat (ook als Skitta dicht is)'),
       isIos() && !isStandalone() ? h('p', { class: 'muted', style: { margin: '0 0 6px' } }, 'Op een iPhone werkt dit alleen als je Skitta op je beginscherm zet (Deel → Zet op beginscherm).') : null,
       cb('onlineToasts', 'Melding als een contactpersoon online komt')),
+    mobile() ? h('fieldset', { class: 'opt-group' }, h('legend', null, 'Weergave'),
+      [['auto', 'Automatisch (zoals je telefoon)'], ['light', 'Licht'], ['dark', 'Donker']].map(([id, label]) => h('label', null,
+        h('input', { type: 'radio', name: 'mode', checked: (o.mode || 'auto') === id, onchange: () => setMode(id) }), label))) : null,
     mobile() ? null : h('fieldset', { class: 'opt-group' }, h('legend', null, 'Versie (uiterlijk)'),
       h('div', { class: 'theme-pick' }, THEMES.map(([id, label]) => h('label', null,
         h('input', { type: 'radio', name: 'theme', checked: (o.theme || '') === id, onchange: () => setTheme(id) }), label)))),
