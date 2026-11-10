@@ -511,3 +511,4 @@ textarea.field { height: auto; resize: vertical; }
 .incoming { z-index: 78; }
 body:has(#incoming) .toasts { bottom: 190px; }
 @media (max-width: 720px) { body:has(#incoming) .toasts { top: 190px; } }
+.e2e-note { margin: 10px auto 4px; max-width: 420px; padding: 6px 10px; text-align: center; color: #6b5a12; background: #fffbe2; border: 1px solid #efe2a2; border-radius: 4px; font-size: 11px; }

@@ -113,7 +113,7 @@ export async function sessionUser(env, request) {
   const token = sessionToken(request);
   if (!token) return null;
   const user = await env.DB.prepare(
-    `SELECT u.id, u.username, u.display_name, u.email, u.mood, u.presence, u.avatar_id, u.is_admin, u.status
+    `SELECT u.id, u.username, u.display_name, u.email, u.mood, u.presence, u.avatar_id, u.is_admin, u.status, u.kdf_v, u.kdf_salt, u.pubkey, u.enc_privkey
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ? AND u.status = 'active'`
   ).bind(await sha256hex(token), now()).first();

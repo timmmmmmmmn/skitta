@@ -35,11 +35,6 @@ function str(v, max = 500) {
   return String(v ?? '').trim().slice(0, max);
 }
 
-function checkPassword(pw) {
-  if (typeof pw !== 'string' || pw.length < 8) throw new HttpError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
-  if (pw.length > 200) throw new HttpError(400, 'Wachtwoord is te lang');
-}
-
 async function setting(env, key, fallback = '') {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first();
   return row ? row.value : fallback;
@@ -52,7 +47,75 @@ function publicUser(u, presence) {
   };
 }
 
+// ---------- Sleutels (end-to-end) ----------
+// De server ziet nooit het wachtwoord: de browser stuurt een afgeleide inlogcode (auth) en bewaart hier
+// alleen het versleutelde geheime deel van het sleutelpaar. Alles is base64.
+
+const B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function b64field(v, min, max, name) {
+  const s = String(v ?? '');
+  if (s.length < min || s.length > max || !B64_RE.test(s)) throw new HttpError(400, `Ongeldige ${name}; ververs de pagina en probeer het opnieuw`);
+  return s;
+}
+
+// De sleutelgegevens die bij registreren, omzetten en wachtwoord wijzigen meekomen.
+function keyFields(b, { pubkey = true } = {}) {
+  return {
+    auth: b64field(b.auth, 40, 64, 'inlogcode'),
+    salt: b64field(b.salt, 20, 32, 'salt'),
+    pubkey: pubkey ? b64field(b.pubkey, 80, 100, 'sleutel') : null,
+    enc_privkey: b64field(b.enc_privkey, 100, 400, 'sleutel')
+  };
+}
+
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const toB64 = (bytes) => {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+};
+
+// Ontsleutelen met de sleutel van één bericht (alleen bij een melding). Formaat: iv (12) + ciphertext.
+async function openWithKey(keyB64, data) {
+  const key = await crypto.subtle.importKey('raw', fromB64(keyB64), 'AES-GCM', false, ['decrypt']);
+  const bytes = typeof data === 'string' ? fromB64(data) : data;
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12) }, key, bytes.slice(12)));
+}
+
+function parseEnvelope(s) {
+  try {
+    const e = JSON.parse(s);
+    if (Number.isInteger(e.kv) && typeof e.wk === 'string' && typeof e.c === 'string') return e;
+  } catch {}
+  return null;
+}
+
+// Een versleuteld bericht: { kv: sleutelversie, wk: berichtsleutel ingepakt met de gesprekssleutel, c: tekst }.
+function checkEnvelope(s, conv) {
+  const text = String(s ?? '');
+  const e = text.length <= 16000 ? parseEnvelope(text) : null;
+  if (!e || e.kv < 1 || e.kv > conv.key_version || e.wk.length > 200 || !B64_RE.test(e.wk) || !B64_RE.test(e.c)) {
+    throw new HttpError(400, 'Ongeldig versleuteld bericht; ververs de pagina');
+  }
+  return JSON.stringify({ kv: e.kv, wk: e.wk, c: e.c });
+}
+
 // ---------- Account ----------
+
+async function fakeSalt(login) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`skitta-salt|${login}`)));
+  return toB64(d.slice(0, 16));
+}
+
+// Stap 1 van inloggen: de salt om de inlogcode en sleutel uit het wachtwoord af te leiden.
+async function prelogin(env, request) {
+  const b = await body(request);
+  const id = str(b.login, 200).toLowerCase();
+  const user = await env.DB.prepare('SELECT kdf_salt, kdf_v FROM users WHERE username = ? OR email = ?').bind(id, id).first();
+  if (user?.kdf_v === 0) return json({ v: 0 });
+  return json({ v: 1, salt: user?.kdf_salt || await fakeSalt(id) });
+}
 
 async function register(env, request) {
   if ((await setting(env, 'registration', 'open')) !== 'open') throw new HttpError(403, 'Nieuwe accounts maken is op dit moment uitgeschakeld');
@@ -65,15 +128,16 @@ async function register(env, request) {
   if (!USERNAME_RE.test(username)) throw new HttpError(400, 'Skittanaam: 3–32 tekens, begint met een letter; kleine letters, cijfers, . _ of -');
   if (displayName.length < 2) throw new HttpError(400, 'Vul je naam in');
   if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Vul een geldig e-mailadres in');
-  checkPassword(b.password);
+  const k = keyFields(b);
   const exists = await env.DB.prepare('SELECT username FROM users WHERE username = ? OR email = ?').bind(username, email).first();
   if (exists) throw new HttpError(409, exists.username === username ? 'Deze Skittanaam is al bezet' : 'Er is al een account met dit e-mailadres');
   await recordAttempt(env, `reg|${ip}`);
 
   const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   const user = await env.DB.prepare(
-    'INSERT INTO users (username, display_name, email, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id'
-  ).bind(username, displayName, email, await hashPassword(b.password), n === 0 ? 1 : 0, now()).first();
+    `INSERT INTO users (username, display_name, email, password_hash, kdf_salt, kdf_v, pubkey, enc_privkey, is_admin, created_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id`
+  ).bind(username, displayName, email, await hashPassword(k.auth), k.salt, k.pubkey, k.enc_privkey, n === 0 ? 1 : 0, now()).first();
   return sessionResponse(env, user.id, b, 201);
 }
 
@@ -82,9 +146,24 @@ async function sessionResponse(env, userId, b, status = 200) {
     // Desktop- of Android-app: token in de response in plaats van een cookie.
     const token = randomToken(32);
     await createSession(env, userId, true, token);
-    return json({ ok: true, token }, status);
+    return json({ ok: true, id: userId, token }, status);
   }
-  return json({ ok: true }, status, { 'set-cookie': await createSession(env, userId, b.remember !== false) });
+  return json({ ok: true, id: userId }, status, { 'set-cookie': await createSession(env, userId, b.remember !== false) });
+}
+
+// Een oud account (kdf_v 0, of na een wachtwoordreset door de beheerder) logt één keer in met het
+// wachtwoord zelf en zet tegelijk de inlogcode en een nieuw sleutelpaar.
+async function upgradeAccount(env, userId, upgrade) {
+  const k = keyFields(upgrade || {});
+  await env.DB.prepare(
+    'UPDATE users SET password_hash = ?, kdf_salt = ?, kdf_v = 1, pubkey = ?, enc_privkey = ? WHERE id = ?'
+  ).bind(await hashPassword(k.auth), k.salt, k.pubkey, k.enc_privkey, userId).run();
+  // Medeleden laten weten dat ze de gesprekssleutels opnieuw voor deze persoon moeten inpakken.
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT o.user_id FROM members m JOIN members o ON o.conversation_id = m.conversation_id
+      WHERE m.user_id = ? AND o.left_at IS NULL`
+  ).bind(userId).all();
+  await hub(env).notify(results.map((r) => r.user_id), { t: 'conv' });
 }
 
 async function login(env, request) {
@@ -94,21 +173,33 @@ async function login(env, request) {
   if (await tooManyAttempts(env, `login|${ip}`, 20, 900e3) || await tooManyAttempts(env, `login|${id}`, 10, 900e3)) {
     throw new HttpError(429, 'Te veel mislukte pogingen. Wacht een kwartier en probeer het opnieuw.');
   }
-  const user = await env.DB.prepare('SELECT id, password_hash, status FROM users WHERE username = ? OR email = ?').bind(id, id).first();
-  if (!user || !(await verifyPassword(String(b.password ?? ''), user.password_hash))) {
+  const user = await env.DB.prepare('SELECT id, password_hash, status, kdf_v FROM users WHERE username = ? OR email = ?').bind(id, id).first();
+  const secret = user?.kdf_v === 0 ? b.password : b.auth;
+  if (!user || !(await verifyPassword(String(secret ?? ''), user.password_hash))) {
     await recordAttempt(env, `login|${ip}`);
     await recordAttempt(env, `login|${id}`);
     throw new HttpError(401, 'Je Skittanaam of wachtwoord klopt niet');
   }
   if (user.status !== 'active') throw new HttpError(403, 'Dit account is geblokkeerd door de beheerder');
+  if (user.kdf_v === 0) await upgradeAccount(env, user.id, b.upgrade);
   if (PRESENCES.includes(b.presence)) await env.DB.prepare('UPDATE users SET presence = ? WHERE id = ?').bind(b.presence, user.id).run();
   return sessionResponse(env, user.id, b);
+}
+
+// Al ingelogd van vóór de versleuteling: met het wachtwoord omzetten.
+async function upgradeMe(env, user, request) {
+  const b = await body(request);
+  const row = await env.DB.prepare('SELECT password_hash, kdf_v FROM users WHERE id = ?').bind(user.id).first();
+  if (row.kdf_v !== 0) throw new HttpError(409, 'Je account is al omgezet');
+  if (!(await verifyPassword(String(b.password ?? ''), row.password_hash))) throw new HttpError(400, 'Wachtwoord klopt niet');
+  await upgradeAccount(env, user.id, b.upgrade);
+  return json({ ok: true });
 }
 
 function meOut(user, announcement) {
   return {
     ...publicUser(user), email: user.email, presence_pref: user.presence, is_admin: !!user.is_admin,
-    announcement
+    announcement, kdf_v: user.kdf_v, kdf_salt: user.kdf_salt, pubkey: user.pubkey, enc_privkey: user.enc_privkey
   };
 }
 
@@ -140,12 +231,14 @@ async function updateMe(env, user, request) {
   return json({ ok: true });
 }
 
+// Nieuw wachtwoord: de browser pakt hetzelfde sleutelpaar opnieuw in met de nieuwe sleutel.
 async function changePassword(env, user, request) {
   const b = await body(request);
   const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(user.id).first();
-  if (!(await verifyPassword(String(b.current ?? ''), row.password_hash))) throw new HttpError(400, 'Huidig wachtwoord klopt niet');
-  checkPassword(b.password);
-  await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(await hashPassword(b.password), user.id).run();
+  if (!(await verifyPassword(String(b.current_auth ?? ''), row.password_hash))) throw new HttpError(400, 'Huidig wachtwoord klopt niet');
+  const k = keyFields(b, { pubkey: false });
+  await env.DB.prepare('UPDATE users SET password_hash = ?, kdf_salt = ?, enc_privkey = ? WHERE id = ?')
+    .bind(await hashPassword(k.auth), k.salt, k.enc_privkey, user.id).run();
   return json({ ok: true });
 }
 
@@ -180,8 +273,17 @@ async function readImage(env, request) {
 function mediaInsert(env, id, ownerId, convId, img, w, h) {
   const inR2 = env.MEDIA ? 1 : 0;
   return env.DB.prepare(
-    'INSERT INTO media (id, owner_id, conversation_id, mime, size, width, height, in_r2, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, ownerId, convId, img.mime, img.buf.length, w || null, h || null, inR2, inR2 ? null : img.buf, now());
+    'INSERT INTO media (id, owner_id, conversation_id, mime, size, width, height, in_r2, data, created_at, enc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, ownerId, convId, img.mime, img.buf.length, w || null, h || null, inR2, inR2 ? null : img.buf, now(), img.enc ? 1 : 0);
+}
+
+async function readEncrypted(env, request) {
+  const max = (env.MEDIA ? MAX_PHOTO_R2 : MAX_PHOTO_D1) + 64;
+  if (Number(request.headers.get('content-length') || 0) > max) throw new HttpError(413, 'Deze foto is te groot');
+  const buf = new Uint8Array(await request.arrayBuffer());
+  if (buf.length < 29) throw new HttpError(400, 'Geen foto ontvangen');
+  if (buf.length > max) throw new HttpError(413, 'Deze foto is te groot');
+  return { buf, mime: 'application/octet-stream', enc: true };
 }
 
 async function mediaStore(env, id, img) {
@@ -381,7 +483,8 @@ function msgOut(m) {
   return {
     id: m.id, c: m.conversation_id, u: m.sender_id, k: m.kind, b: gone ? '' : m.body,
     media: gone ? null : m.media_id, w: m.width || null, h: m.height || null,
-    at: m.created_at, ed: m.edited_at || null, del: !!m.deleted_at, rm: !!m.removed, cid: m.client_id || null
+    at: m.created_at, ed: m.edited_at || null, del: !!m.deleted_at, rm: !!m.removed, cid: m.client_id || null,
+    e: m.enc && !gone ? 1 : 0
   };
 }
 
@@ -390,7 +493,7 @@ const MSG_FROM = 'messages m LEFT JOIN media x ON x.id = m.media_id';
 
 async function conversationsFor(env, user, onlyId) {
   const { results: convs } = await env.DB.prepare(
-    `SELECT c.id, c.kind, c.topic, c.created_by, c.created_at, c.last_at, m.left_at, m.last_read,
+    `SELECT c.id, c.kind, c.topic, c.created_by, c.created_at, c.last_at, c.key_version, c.rotate, m.left_at, m.last_read,
             (SELECT COUNT(*) FROM messages z WHERE z.conversation_id = c.id AND z.id > m.last_read
                AND (z.sender_id IS NULL OR z.sender_id != ?) AND z.kind != 'system' AND z.deleted_at IS NULL) AS unread
        FROM members m JOIN conversations c ON c.id = m.conversation_id
@@ -400,26 +503,92 @@ async function conversationsFor(env, user, onlyId) {
   if (!convs.length) return [];
   const ids = convs.map((c) => c.id);
   const marks = ids.map(() => '?').join(',');
-  const [members, lasts] = await env.DB.batch([
+  const [members, lasts, keyed] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id
+      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.pubkey
          FROM members m JOIN users u ON u.id = m.user_id WHERE m.conversation_id IN (${marks})`
     ).bind(...ids),
     env.DB.prepare(
       `SELECT ${MSG_COLS} FROM ${MSG_FROM}
         WHERE m.id IN (SELECT MAX(id) FROM messages WHERE conversation_id IN (${marks}) GROUP BY conversation_id)`
+    ).bind(...ids),
+    // Wie heeft de huidige gesprekssleutel, ingepakt voor zijn huidige publieke sleutel?
+    env.DB.prepare(
+      `SELECT k.conversation_id, k.user_id FROM conv_keys k
+         JOIN conversations c ON c.id = k.conversation_id AND k.version = c.key_version
+         JOIN users u ON u.id = k.user_id AND u.pubkey = k.pubkey
+        WHERE k.conversation_id IN (${marks})`
     ).bind(...ids)
   ]);
+  const hasKey = new Set(keyed.results.map((r) => `${r.conversation_id}:${r.user_id}`));
   const byConv = new Map(ids.map((id) => [id, []]));
   for (const m of members.results) {
-    byConv.get(m.conversation_id).push({ ...publicUser(m), left: !!m.left_at, read: m.last_read });
+    byConv.get(m.conversation_id).push({ ...publicUser(m), pubkey: m.pubkey || null, left: !!m.left_at, read: m.last_read });
   }
   const last = new Map(lasts.results.map((m) => [m.conversation_id, msgOut(m)]));
   return convs.map((c) => ({
     id: c.id, kind: c.kind, topic: c.topic, created_by: c.created_by, last_at: c.last_at,
-    left: !!c.left_at, last_read: c.last_read, unread: c.unread,
-    members: byConv.get(c.id), last: last.get(c.id) || null
+    left: !!c.left_at, last_read: c.last_read, unread: c.unread, key_version: c.key_version, rotate: !!c.rotate,
+    members: byConv.get(c.id), last: last.get(c.id) || null,
+    missing: c.key_version ? byConv.get(c.id).filter((m) => !m.left && m.pubkey && !hasKey.has(`${c.id}:${m.id}`)).map((m) => m.id) : []
   }));
+}
+
+// ---------- Gesprekssleutels ----------
+
+// Mijn ingepakte gesprekssleutels (alleen die voor mijn huidige publieke sleutel).
+async function listKeys(env, user, url) {
+  const c = Number(url.searchParams.get('c')) || 0;
+  const { results } = await env.DB.prepare(
+    `SELECT conversation_id AS c, version AS v, wrapped AS w FROM conv_keys
+      WHERE user_id = ? AND pubkey = ? ${c ? 'AND conversation_id = ?' : ''}`
+  ).bind(...[user.id, user.pubkey || '', ...(c ? [c] : [])]).all();
+  return json(results);
+}
+
+// Sleutels opslaan. rotate: een nieuwe versie (voor alle leden tegelijk). Anders: een sleutel die ik al heb
+// inpakken voor iemand die hem mist (nieuw lid, of iemand met een nieuw sleutelpaar).
+async function putKeys(env, user, convId, request) {
+  const conv = await memberOf(env, user, convId);
+  if (!user.pubkey) throw new HttpError(409, 'Je hebt nog geen sleutel');
+  const b = await body(request);
+  const list = (Array.isArray(b.keys) ? b.keys : []).slice(0, 500);
+  if (!list.length) throw new HttpError(400, 'Geen sleutels');
+  const { results } = await env.DB.prepare(
+    'SELECT u.id, u.pubkey FROM members m JOIN users u ON u.id = m.user_id WHERE m.conversation_id = ? AND m.left_at IS NULL'
+  ).bind(convId).all();
+  const pubs = new Map(results.filter((r) => r.pubkey).map((r) => [r.id, r.pubkey]));
+  const rows = list.map((k) => ({
+    user_id: Number(k.user_id), version: Number(k.version),
+    wrapped: str(k.wrapped, 400)
+  })).filter((k) => pubs.has(k.user_id) && k.wrapped);
+  const t = now();
+  const insert = (k) => env.DB.prepare(
+    `INSERT INTO conv_keys (conversation_id, user_id, version, wrapped, pubkey, created_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT DO UPDATE SET wrapped = excluded.wrapped, pubkey = excluded.pubkey, created_at = excluded.created_at
+     WHERE conv_keys.pubkey != excluded.pubkey`
+  ).bind(convId, k.user_id, k.version, k.wrapped, pubs.get(k.user_id), t);
+
+  if (b.rotate) {
+    const v = conv.key_version + 1;
+    if (rows.some((k) => k.version !== v)) throw new HttpError(409, 'Er is net een nieuwe sleutel gemaakt');
+    if (!rows.some((k) => k.user_id === user.id)) throw new HttpError(400, 'Ongeldige sleutels');
+    const missing = [...pubs.keys()].filter((id) => !rows.some((k) => k.user_id === id));
+    if (missing.length) throw new HttpError(409, 'De leden van het gesprek zijn veranderd');
+    const res = await env.DB.prepare('UPDATE conversations SET key_version = ?, rotate = 0 WHERE id = ? AND key_version = ?')
+      .bind(v, convId, conv.key_version).run();
+    if (!res.meta.changes) throw new HttpError(409, 'Er is net een nieuwe sleutel gemaakt');
+    await env.DB.batch(rows.map(insert));
+  } else {
+    const { results: mine } = await env.DB.prepare('SELECT version FROM conv_keys WHERE conversation_id = ? AND user_id = ? AND pubkey = ?')
+      .bind(convId, user.id, user.pubkey).all();
+    const held = new Set(mine.map((r) => r.version));
+    const ok = rows.filter((k) => held.has(k.version) && k.version <= conv.key_version);
+    if (!ok.length) return json({ ok: true });
+    await env.DB.batch(ok.map(insert));
+  }
+  await hub(env).notify([...new Set(rows.map((k) => k.user_id))], { t: 'keys', c: convId });
+  return json({ ok: true, key_version: b.rotate ? conv.key_version + 1 : conv.key_version });
 }
 
 async function listConversations(env, user) {
@@ -517,9 +686,10 @@ async function leaveConversation(env, user, convId) {
   await env.DB.batch([
     systemMessage(env, convId, user.id, { e: 'left' }, t),
     env.DB.prepare('UPDATE members SET left_at = ? WHERE conversation_id = ? AND user_id = ?').bind(t, convId, user.id),
-    env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId)
+    env.DB.prepare('UPDATE conversations SET last_at = ?, rotate = 1 WHERE id = ?').bind(t, convId)
   ]);
   await broadcastLatest(env, convId, [user.id]);
+  await hub(env).notify(await activeMemberIds(env, convId), { t: 'conv', c: convId });
   await hub(env).notify([user.id], { t: 'conv', c: convId });
   return json({ ok: true });
 }
@@ -559,7 +729,10 @@ async function sendMessage(env, user, convId, request) {
   const b = await body(request);
   const kind = b.kind === 'call' ? 'call' : 'text';
   let text;
-  if (kind === 'call') {
+  const enc = kind === 'text' && b.enc ? 1 : 0;
+  if (enc) {
+    text = checkEnvelope(b.body, conv);
+  } else if (kind === 'call') {
     const dur = Math.max(0, Math.min(86400, Math.round(Number(b.duration) || 0)));
     text = JSON.stringify({ dur, missed: !!b.missed && !dur, video: !!b.video, failed: !!b.failed && !dur });
   } else {
@@ -572,8 +745,8 @@ async function sendMessage(env, user, convId, request) {
   const cid = str(b.client_id, 40) || null;
   const [res] = await env.DB.batch([
     env.DB.prepare(
-      'INSERT INTO messages (conversation_id, sender_id, kind, body, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *'
-    ).bind(convId, user.id, kind, text, cid, t),
+      'INSERT INTO messages (conversation_id, sender_id, kind, body, client_id, created_at, enc) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *'
+    ).bind(convId, user.id, kind, text, cid, t, enc),
     env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId),
     env.DB.prepare('UPDATE members SET last_read = (SELECT MAX(id) FROM messages WHERE conversation_id = ?) WHERE conversation_id = ? AND user_id = ?').bind(convId, convId, user.id)
   ]);
@@ -586,20 +759,21 @@ async function sendPhoto(env, user, convId, request, url) {
   const conv = await memberOf(env, user, convId);
   await canMessage(env, user, conv);
   if (await tooManyAttempts(env, `photo|${user.id}`, 60, 3600e3)) throw new HttpError(429, 'Je stuurt te veel foto\'s, probeer het later opnieuw');
-  const img = await readImage(env, request);
+  const enc = url.searchParams.get('enc') === '1' ? 1 : 0;
+  const img = enc ? await readEncrypted(env, request) : await readImage(env, request);
   await recordAttempt(env, `photo|${user.id}`);
   const w = Math.min(20000, Number(url.searchParams.get('w')) || 0);
   const h = Math.min(20000, Number(url.searchParams.get('h')) || 0);
   const cid = str(url.searchParams.get('cid'), 40) || null;
-  const caption = str(url.searchParams.get('caption'), 1000);
+  const caption = enc ? checkEnvelope(request.headers.get('x-skitta-body'), conv) : str(url.searchParams.get('caption'), 1000);
   const id = randomToken(18);
   const t = now();
   await mediaStore(env, id, img);
   const [, res] = await env.DB.batch([
     mediaInsert(env, id, user.id, convId, img, w, h),
     env.DB.prepare(
-      "INSERT INTO messages (conversation_id, sender_id, kind, body, media_id, client_id, created_at) VALUES (?, ?, 'photo', ?, ?, ?, ?) RETURNING *"
-    ).bind(convId, user.id, caption, id, cid, t),
+      "INSERT INTO messages (conversation_id, sender_id, kind, body, media_id, client_id, created_at, enc) VALUES (?, ?, 'photo', ?, ?, ?, ?, ?) RETURNING *"
+    ).bind(convId, user.id, caption, id, cid, t, enc),
     env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(t, convId),
     env.DB.prepare('UPDATE members SET last_read = (SELECT MAX(id) FROM messages WHERE conversation_id = ?) WHERE conversation_id = ? AND user_id = ?').bind(convId, convId, user.id)
   ]);
@@ -619,11 +793,31 @@ async function editMessage(env, user, id, request) {
   if (m.kind !== 'text') throw new HttpError(400, 'Dit bericht kun je niet bewerken');
   if (now() - m.created_at > EDIT_WINDOW) throw new HttpError(400, 'Berichten kun je tot 24 uur na het versturen bewerken');
   const b = await body(request);
-  const text = String(b.body ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_TEXT);
-  if (!text) return deleteMessage(env, user, id);
+  let text;
+  let enc = 0;
+  if (b.enc) {
+    const conv = await memberOf(env, user, m.conversation_id);
+    text = checkEnvelope(b.body, conv);
+    enc = 1;
+  } else {
+    text = String(b.body ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_TEXT);
+    if (!text) return deleteMessage(env, user, id);
+  }
   const t = now();
-  await env.DB.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').bind(text, t, id).run();
-  const out = msgOut({ ...m, body: text, edited_at: t });
+  await env.DB.prepare('UPDATE messages SET body = ?, edited_at = ?, enc = ? WHERE id = ?').bind(text, t, enc, id).run();
+  const out = msgOut({ ...m, body: text, edited_at: t, enc });
+  await hub(env).notify(await activeMemberIds(env, m.conversation_id), { t: 'msg', m: out });
+  return json(out);
+}
+
+async function encryptOldMessage(env, user, id, request) {
+  const m = await ownMessage(env, user, id);
+  if (m.enc || m.kind !== 'text') return json(msgOut(m));
+  const conv = await memberOf(env, user, m.conversation_id, false);
+  const b = await body(request);
+  const text = checkEnvelope(b.body, conv);
+  await env.DB.prepare('UPDATE messages SET body = ?, enc = 1 WHERE id = ? AND enc = 0').bind(text, id).run();
+  const out = msgOut({ ...m, body: text, enc: 1 });
   await hub(env).notify(await activeMemberIds(env, m.conversation_id), { t: 'msg', m: out });
   return json(out);
 }
@@ -655,11 +849,23 @@ async function reportMessage(env, user, id, request) {
   await memberOf(env, user, m.conversation_id, false);
   const reason = REASONS.includes(b.reason) ? b.reason : 'anders';
   if (await tooManyAttempts(env, `report|${user.id}`, 30, 3600e3)) throw new HttpError(429, 'Te veel meldingen, probeer het later opnieuw');
+  let snapshot = m.body;
+  let msgKey = null;
+  if (m.enc) {
+    // Alleen dit ene bericht wordt leesbaar voor de beheerder: de melder geeft de sleutel van dit bericht mee.
+    const env_ = parseEnvelope(m.body);
+    try {
+      msgKey = b64field(b.key, 40, 48, 'sleutel');
+      snapshot = new TextDecoder().decode(await openWithKey(msgKey, env_.c));
+    } catch {
+      throw new HttpError(400, 'Dit bericht kon niet worden gecontroleerd');
+    }
+  }
   await recordAttempt(env, `report|${user.id}`);
   await env.DB.prepare(
-    `INSERT INTO reports (message_id, reporter_id, sender_id, reason, note, snapshot, media_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
-  ).bind(id, user.id, m.sender_id, reason, str(b.note, 500), m.body, m.media_id, now()).run();
+    `INSERT INTO reports (message_id, reporter_id, sender_id, reason, note, snapshot, media_id, msg_key, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`
+  ).bind(id, user.id, m.sender_id, reason, str(b.note, 500), snapshot, m.media_id, msgKey, now()).run();
   return json({ ok: true }, 201);
 }
 
@@ -762,10 +968,22 @@ async function adminDecide(env, admin, id, request) {
 }
 
 async function adminReportMedia(env, id) {
-  const report = await env.DB.prepare('SELECT media_id FROM reports WHERE id = ?').bind(id).first();
+  const report = await env.DB.prepare('SELECT media_id, msg_key FROM reports WHERE id = ?').bind(id).first();
   const row = report?.media_id && await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(report.media_id).first();
   if (!row) throw new HttpError(404, 'Foto niet meer beschikbaar');
-  return mediaResponse(env, row, 'no-store');
+  if (!row.enc) return mediaResponse(env, row, 'no-store');
+  // Versleutelde foto: ontsleutelen met de sleutel die de melder meegaf.
+  let data = row.data;
+  if (row.in_r2) data = new Uint8Array(await (await env.MEDIA.get(`media/${row.id}`)).arrayBuffer());
+  else if (Array.isArray(data)) data = new Uint8Array(data);
+  else data = new Uint8Array(data);
+  let plain;
+  try {
+    plain = await openWithKey(report.msg_key, data);
+  } catch {
+    throw new HttpError(404, 'Foto kon niet worden ontsleuteld');
+  }
+  return mediaResponse(env, { ...row, in_r2: 0, data: plain, mime: sniffImage(plain) || 'application/octet-stream' }, 'no-store');
 }
 
 async function adminUsers(env, url) {
@@ -807,7 +1025,7 @@ async function adminResetPassword(env, admin, id) {
   if (!target) throw new HttpError(404, 'Gebruiker niet gevonden');
   const temp = randomToken(9).replace(/[-_]/g, 'x');
   await env.DB.batch([
-    env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(await hashPassword(temp), id),
+    env.DB.prepare('UPDATE users SET password_hash = ?, kdf_v = 0, kdf_salt = NULL, pubkey = NULL, enc_privkey = NULL WHERE id = ?').bind(await hashPassword(temp), id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id)
   ]);
   if (id !== admin.id) await hub(env).kick(id);
@@ -855,6 +1073,7 @@ async function route(request, env, url) {
 
   if (p === 'register' && m === 'POST') return register(env, request);
   if (p === 'login' && m === 'POST') return login(env, request);
+  if (p === 'prelogin' && m === 'POST') return prelogin(env, request);
   if (p === 'logout' && m === 'POST') {
     await destroySession(env, request);
     return json({ ok: true }, 200, { 'set-cookie': clearSessionCookie() });
@@ -877,11 +1096,13 @@ async function route(request, env, url) {
     if (!b && m === 'GET') return json(meOut(user, await setting(env, 'announcement', '')));
     if (!b && m === 'PATCH') return updateMe(env, user, request);
     if (b === 'password' && m === 'POST') return changePassword(env, user, request);
+    if (b === 'upgrade' && m === 'POST') return upgradeMe(env, user, request);
     if (b === 'avatar' && m === 'PUT') return setAvatar(env, user, request);
     if (b === 'avatar' && m === 'DELETE') return removeAvatar(env, user);
   }
   if (a === 'media' && b && m === 'GET') return getMedia(env, user, b);
   if (a === 'ice' && m === 'GET') return iceServers(env);
+  if (a === 'keys' && m === 'GET') return listKeys(env, user, url);
 
   if (a === 'users' && b === 'search' && m === 'GET') return searchUsers(env, user, url);
 
@@ -902,6 +1123,7 @@ async function route(request, env, url) {
     if (id && c === 'messages' && m === 'POST') return sendMessage(env, user, id, request);
     if (id && c === 'photo' && m === 'POST') return sendPhoto(env, user, id, request, url);
     if (id && c === 'read' && m === 'POST') return markRead(env, user, id, request);
+    if (id && c === 'keys' && m === 'POST') return putKeys(env, user, id, request);
     if (id && c === 'members' && !d && m === 'POST') return addMembers(env, user, id, request);
     if (id && c === 'members' && d === 'me' && m === 'DELETE') return leaveConversation(env, user, id);
   }
@@ -910,6 +1132,7 @@ async function route(request, env, url) {
     if (!c && m === 'PATCH') return editMessage(env, user, id, request);
     if (!c && m === 'DELETE') return deleteMessage(env, user, id);
     if (c === 'report' && m === 'POST') return reportMessage(env, user, id, request);
+    if (c === 'encrypt' && m === 'PUT') return encryptOldMessage(env, user, id, request);
   }
 
   if (a === 'admin') {
@@ -931,7 +1154,7 @@ async function route(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+    if (url.protocol === 'http:' && !env.DEV) {
       url.protocol = 'https:';
       return Response.redirect(url.toString(), 308);
     }

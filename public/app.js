@@ -192,6 +192,363 @@ const onlyEmoji = (text) => {
   return t.length > 0 && t.length <= 12 && t.replace(EMOJI_RE, '').trim() === '';
 };
 
+// ---------- End-to-end-versleuteling ----------
+// Uit het wachtwoord komen (PBKDF2, 600.000 rondes) twee helften: de inlogcode voor de server en de
+// sleutel die het geheime deel van je sleutelpaar (ECDH P-256) opent. Dat sleutelpaar is per account,
+// zodat je op elk apparaat met alleen je wachtwoord alles kunt lezen.
+// Elk gesprek heeft een gesprekssleutel (AES-256, met versies), per lid ingepakt met diens publieke
+// sleutel. Elk bericht heeft een eigen berichtsleutel, ingepakt met de gesprekssleutel; bij een melding
+// geeft de melder alleen die berichtsleutel mee.
+
+const enc8 = (s) => new TextEncoder().encode(s);
+const dec8 = (b) => new TextDecoder().decode(b);
+const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
+
+function b64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const subtle = () => crypto.subtle;
+
+async function sealBytes(key, bytes) {
+  const iv = rand(12);
+  const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv);
+  out.set(ct, 12);
+  return out;
+}
+
+async function openBytes(key, bytes) {
+  return new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv: bytes.subarray(0, 12) }, key, bytes.subarray(12)));
+}
+
+const seal = async (key, bytes) => b64(await sealBytes(key, bytes));
+const open = (key, s) => openBytes(key, unb64(s));
+const aesKey = (raw, usages = ['encrypt', 'decrypt']) => subtle().importKey('raw', raw, 'AES-GCM', false, usages);
+
+// Het geheime deel van het sleutelpaar wordt in IndexedDB bewaard als niet-exporteerbare CryptoKey.
+const KeyStore = {
+  db: null,
+  open() {
+    if (this.db) return this.db;
+    this.db = new Promise((resolve, reject) => {
+      const req = indexedDB.open('skitta', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('keys');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.db;
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', mode);
+      const req = fn(tx.objectStore('keys'));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  get(id) { return this.run('readonly', (s) => s.get(`u${id}`)).catch(() => null); },
+  put(id, v) { return this.run('readwrite', (s) => s.put(v, `u${id}`)).catch(() => {}); },
+  del(id) { return this.run('readwrite', (s) => s.delete(`u${id}`)).catch(() => {}); }
+};
+
+const E2E = {
+  ITER: 600000,
+  priv: null,
+  pub: null,
+  keys: new Map(),
+  media: new Map(),
+  filling: new Set(),
+
+  async derive(password, salt) {
+    const base = await subtle().importKey('raw', enc8(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: unb64(salt), iterations: this.ITER }, base, 512));
+    return { auth: b64(bits.subarray(0, 32)), wrapKey: await aesKey(bits.slice(32)) };
+  },
+
+  // Nieuw sleutelpaar, het geheime deel ingepakt met de sleutel uit het wachtwoord.
+  async fresh(password) {
+    const salt = b64(rand(16));
+    const { auth, wrapKey } = await this.derive(password, salt);
+    const kp = await subtle().generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    const pkcs8 = new Uint8Array(await subtle().exportKey('pkcs8', kp.privateKey));
+    return {
+      fields: { auth, salt, pubkey: b64(new Uint8Array(await subtle().exportKey('raw', kp.publicKey))), enc_privkey: await seal(wrapKey, pkcs8) },
+      pkcs8
+    };
+  },
+
+  async remember(userId, pkcs8, pub) {
+    this.priv = await subtle().importKey('pkcs8', pkcs8, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+    this.pub = pub;
+    await KeyStore.put(userId, { priv: this.priv, pub });
+  },
+
+  async forget(userId) {
+    this.priv = null;
+    this.pub = null;
+    this.keys.clear();
+    for (const url of this.media.values()) url.then?.((u) => u && URL.revokeObjectURL(u));
+    this.media.clear();
+    if (userId) await KeyStore.del(userId);
+  },
+
+  // Inloggen: de server krijgt alleen de inlogcode. Oude accounts sturen één keer het wachtwoord mee
+  // en krijgen dan meteen een inlogcode en sleutelpaar.
+  async login(login, password, extra) {
+    const pre = await api('POST', 'prelogin', { login });
+    if (pre.v === 0) {
+      const f = await this.fresh(password);
+      const r = await api('POST', 'login', { login, password, upgrade: f.fields, ...extra });
+      await this.remember(r.id, f.pkcs8, f.fields.pubkey);
+      return r;
+    }
+    const { auth, wrapKey } = await this.derive(password, pre.salt);
+    const r = await api('POST', 'login', { login, auth, ...extra });
+    const me = await api('GET', 'me', undefined, { quiet: true });
+    await this.remember(r.id, await open(wrapKey, me.enc_privkey), me.pubkey);
+    return r;
+  },
+
+  async register(data, password) {
+    const f = await this.fresh(password);
+    const r = await api('POST', 'register', { ...data, ...f.fields });
+    await this.remember(r.id, f.pkcs8, f.fields.pubkey);
+    return r;
+  },
+
+  // Bij het openen van de app: sleutel van dit apparaat laden, of om het wachtwoord vragen.
+  async unlock(me) {
+    if (me.kdf_v === 1 && me.pubkey) {
+      const stored = await KeyStore.get(me.id);
+      if (stored?.priv && stored.pub === me.pubkey) {
+        this.priv = stored.priv;
+        this.pub = stored.pub;
+        return true;
+      }
+    }
+    return unlockDialog(me);
+  },
+
+  async unlockWith(me, password) {
+    if (me.kdf_v === 0 || !me.pubkey) {
+      const f = await this.fresh(password);
+      await api('POST', 'me/upgrade', { password, upgrade: f.fields });
+      await this.remember(me.id, f.pkcs8, f.fields.pubkey);
+      Object.assign(me, { kdf_v: 1, kdf_salt: f.fields.salt, pubkey: f.fields.pubkey, enc_privkey: f.fields.enc_privkey });
+      return;
+    }
+    const { wrapKey } = await this.derive(password, me.kdf_salt);
+    let pkcs8;
+    try {
+      pkcs8 = await open(wrapKey, me.enc_privkey);
+    } catch {
+      throw new Error('Wachtwoord klopt niet');
+    }
+    await this.remember(me.id, pkcs8, me.pubkey);
+  },
+
+  async changePassword(me, current, next) {
+    const { auth: currentAuth, wrapKey } = await this.derive(current, me.kdf_salt);
+    let pkcs8;
+    try {
+      pkcs8 = await open(wrapKey, me.enc_privkey);
+    } catch {
+      throw new Error('Huidig wachtwoord klopt niet');
+    }
+    const salt = b64(rand(16));
+    const n = await this.derive(next, salt);
+    const fields = { current_auth: currentAuth, auth: n.auth, salt, enc_privkey: await seal(n.wrapKey, pkcs8) };
+    await api('POST', 'me/password', fields);
+    Object.assign(me, { kdf_salt: salt, enc_privkey: fields.enc_privkey });
+  },
+
+  // ---- Gesprekssleutels (ECIES: tijdelijke ECDH-sleutel + HKDF + AES-GCM) ----
+
+  async boxKey(shared) {
+    const base = await subtle().importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+    return subtle().deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: enc8('skitta-gesprekssleutel') },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  },
+
+  async wrapFor(pubkey, raw) {
+    const peer = await subtle().importKey('raw', unb64(pubkey), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const eph = await subtle().generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    const shared = await subtle().deriveBits({ name: 'ECDH', public: peer }, eph.privateKey, 256);
+    const e = b64(new Uint8Array(await subtle().exportKey('raw', eph.publicKey)));
+    return JSON.stringify({ e, s: await seal(await this.boxKey(shared), raw) });
+  },
+
+  async unwrap(wrapped) {
+    const w = JSON.parse(wrapped);
+    const eph = await subtle().importKey('raw', unb64(w.e), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const shared = await subtle().deriveBits({ name: 'ECDH', public: eph }, this.priv, 256);
+    return open(await this.boxKey(shared), w.s);
+  },
+
+  async addKey(c, v, raw) {
+    this.keys.set(`${c}:${v}`, { raw, key: await aesKey(raw) });
+    // Een nieuwere versie die iemand anders heeft gemaakt: die voortaan gebruiken.
+    const conv = S.convs.get(c);
+    if (conv && v > conv.key_version) conv.key_version = v;
+  },
+
+  async loadKeys(c) {
+    if (!this.priv) return;
+    const list = await api('GET', c ? `keys?c=${c}` : 'keys');
+    await Promise.all(list.map(async (k) => {
+      if (this.keys.has(`${k.c}:${k.v}`)) return;
+      try { await this.addKey(k.c, k.v, await this.unwrap(k.w)); } catch {}
+    }));
+  },
+
+  versions(c) {
+    return [...this.keys.keys()].filter((k) => k.startsWith(`${c}:`)).map((k) => Number(k.split(':')[1]));
+  },
+
+  // Zorgt dat er een gesprekssleutel is die ik heb; zo nodig een nieuwe versie voor alle leden.
+  async ensure(convId, tries = 0) {
+    const conv = S.convs.get(convId);
+    if (conv.key_version && !conv.rotate && this.keys.has(`${convId}:${conv.key_version}`)) return conv.key_version;
+    const raw = rand(32);
+    const v = conv.key_version + 1;
+    const members = conv.members.filter((m) => !m.left && (m.id === S.me.id ? this.pub : m.pubkey));
+    const keys = await Promise.all(members.map(async (m) => ({
+      user_id: m.id, version: v, wrapped: await this.wrapFor(m.id === S.me.id ? this.pub : m.pubkey, raw)
+    })));
+    try {
+      await api('POST', `conversations/${convId}/keys`, { rotate: true, keys });
+    } catch (e) {
+      if (e.status !== 409 || tries > 2) throw e;
+      await refreshConv(convId);
+      await this.loadKeys(convId);
+      return this.ensure(convId, tries + 1);
+    }
+    await this.addKey(convId, v, raw);
+    conv.key_version = v;
+    conv.rotate = false;
+    return v;
+  },
+
+  // Leden die een sleutel missen (nieuw in de groep, of een nieuw sleutelpaar na een wachtwoordreset)
+  // krijgen alle versies die ik heb, zodat ze ook de eerdere berichten kunnen lezen.
+  async fillMissing(conv) {
+    const held = this.versions(conv.id);
+    if (!held.length || !conv.missing?.length) return;
+    for (const uid of conv.missing) {
+      const m = conv.members.find((x) => x.id === uid);
+      const tag = `${conv.id}:${uid}:${m?.pubkey}`;
+      if (!m?.pubkey || uid === S.me.id || this.filling.has(tag)) continue;
+      this.filling.add(tag);
+      try {
+        const keys = await Promise.all(held.map(async (v) => ({ user_id: uid, version: v, wrapped: await this.wrapFor(m.pubkey, this.keys.get(`${conv.id}:${v}`).raw) })));
+        await api('POST', `conversations/${conv.id}/keys`, { keys });
+      } catch {
+        this.filling.delete(tag);
+      }
+    }
+  },
+
+  // ---- Berichten ----
+
+  async encrypt(convId, text, bytes) {
+    const v = await this.ensure(convId);
+    const mk = rand(32);
+    const mkKey = await aesKey(mk);
+    const body = JSON.stringify({ kv: v, wk: await seal(this.keys.get(`${convId}:${v}`).key, mk), c: await seal(mkKey, enc8(text)) });
+    return { body, mk: b64(mk), media: bytes ? await sealBytes(mkKey, bytes) : null };
+  },
+
+  // Zet m.b om naar leesbare tekst. m.raw houdt de versleutelde vorm, m.mk de berichtsleutel.
+  async decrypt(m, retry = true) {
+    if (!m.e || m.del || m.rm) return m;
+    if (m.raw === undefined) m.raw = m.b;
+    try {
+      const e = JSON.parse(m.raw);
+      let ck = this.keys.get(`${m.c}:${e.kv}`);
+      if (!ck && retry) {
+        await this.loadKeys(m.c);
+        ck = this.keys.get(`${m.c}:${e.kv}`);
+      }
+      if (!ck) throw new Error('geen sleutel');
+      const mk = await open(ck.key, e.wk);
+      m.mk = b64(mk);
+      m.b = dec8(await open(await aesKey(mk), e.c));
+      m.locked = false;
+    } catch {
+      m.b = '';
+      m.locked = true;
+    }
+    return m;
+  },
+
+  async decryptAll(list) {
+    const need = new Set();
+    for (const m of list) {
+      if (!m.e || m.del || m.rm) continue;
+      const kv = parseJson(m.raw ?? m.b).kv;
+      if (!this.keys.has(`${m.c}:${kv}`)) need.add(m.c);
+    }
+    for (const c of need) await this.loadKeys(c).catch(() => {});
+    await Promise.all(list.map((m) => this.decrypt(m, false)));
+    return list;
+  },
+
+  // Een versleutelde foto ophalen en als blob-URL teruggeven (één keer per foto).
+  photoUrl(m) {
+    if (!this.media.has(m.media)) {
+      this.media.set(m.media, (async () => {
+        const res = await fetch(`/api/media/${encodeURIComponent(m.media)}`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Foto niet gevonden');
+        const plain = await openBytes(await aesKey(unb64(m.mk)), new Uint8Array(await res.arrayBuffer()));
+        return URL.createObjectURL(new Blob([plain], { type: sniffMime(plain) }));
+      })().catch(() => null));
+    }
+    return this.media.get(m.media);
+  }
+};
+
+function sniffMime(b) {
+  if (b[0] === 0x89 && b[1] === 0x50) return 'image/png';
+  if (b[0] === 0x47 && b[1] === 0x49) return 'image/gif';
+  if (b[0] === 0x52 && b[1] === 0x49) return 'image/webp';
+  return 'image/jpeg';
+}
+
+// Wachtwoord vragen als dit apparaat de sleutel nog niet heeft (bijv. na het wissen van browsergegevens).
+function unlockDialog(me) {
+  return new Promise((resolve) => {
+    const pw = h('input', { class: 'field', type: 'password', autocomplete: 'current-password', autofocus: true });
+    const err = h('div', { class: 'err' });
+    const old = me.kdf_v === 0 || !me.pubkey;
+    dialog(old ? 'Berichten versleutelen' : 'Berichten ontgrendelen', h('div', null,
+      h('p', null, old
+        ? 'Skitta versleutelt je berichten voortaan end-to-end. Vul nog één keer je wachtwoord in om je sleutel te maken.'
+        : 'Je berichten zijn end-to-end versleuteld. Vul je wachtwoord in om ze op dit apparaat te kunnen lezen.'),
+      h('div', { class: 'frow' }, h('label', null, 'Wachtwoord'), pw), err),
+    [
+      { label: 'Afmelden', left: true, run: (close) => { close(); resolve(false); logout(); } },
+      {
+        label: 'OK', default: true, run: async (close) => {
+          err.textContent = '';
+          try {
+            await E2E.unlockWith(me, pw.value);
+            close(true);
+            resolve(true);
+          } catch (e) {
+            err.textContent = e.message;
+          }
+        }
+      }
+    ], { dismiss: false, closable: false });
+  });
+}
+
 // ---------- Geluiden ----------
 
 const OLD = ['BUSY', 'CALL_IN', 'CALL_INIT', 'CALL_OUT', 'HANGUP', 'HOLD', 'IM', 'ONLINE', 'RESUME'];
@@ -336,8 +693,8 @@ function setupAuth() {
     $('#login-err').textContent = '';
     try {
       save('presence', $('#l-presence').value);
-      await api('POST', 'login', {
-        login: $('#l-name').value, password: $('#l-pass').value,
+      btn.textContent = 'Bezig met aanmelden…';
+      await E2E.login($('#l-name').value.trim().toLowerCase(), $('#l-pass').value, {
         remember: $('#l-remember').checked, presence: $('#l-presence').value
       });
       $('#l-pass').value = '';
@@ -346,6 +703,7 @@ function setupAuth() {
       $('#login-err').textContent = err.message;
     } finally {
       btn.disabled = false;
+      btn.textContent = 'Aanmelden';
     }
   };
 
@@ -357,13 +715,16 @@ function setupAuth() {
       err.textContent = 'De wachtwoorden zijn niet hetzelfde';
       return;
     }
+    if ($('#r-pass').value.length < 8) {
+      err.textContent = 'Wachtwoord moet minimaal 8 tekens zijn';
+      return;
+    }
     const btn = $('#register-form .big-btn');
     btn.disabled = true;
     try {
-      await api('POST', 'register', {
-        display_name: $('#r-display').value, username: $('#r-name').value,
-        password: $('#r-pass').value, email: $('#r-email').value
-      });
+      await E2E.register({
+        display_name: $('#r-display').value, username: $('#r-name').value, email: $('#r-email').value
+      }, $('#r-pass').value);
       await start(true, true);
     } catch (ex) {
       err.textContent = ex.message;
@@ -380,7 +741,9 @@ function setupAuth() {
 async function logout() {
   if (Call.active || Call.incoming) Call.hangup();
   Sound.play('LOGOUT', { force: !!S.opts.sounds });
+  const id = S.me?.id;
   try { await api('POST', 'logout'); } catch {}
+  await E2E.forget(id);
   signedOut();
 }
 
@@ -416,6 +779,8 @@ async function start(fresh = false, isNew = false) {
   $('#app').hidden = false;
   buildMenubar();
   renderMe();
+  if (!(await E2E.unlock(S.me))) return;
+  await E2E.loadKeys().catch(() => {});
   await Promise.all([loadContacts(), loadConvs()]);
   S.ready = true;
   Live.connect();
@@ -434,9 +799,24 @@ async function loadContacts() {
 
 async function loadConvs() {
   const list = await api('GET', 'conversations');
+  await E2E.decryptAll(list.map((c) => c.last).filter(Boolean));
   S.convs = new Map(list.map((c) => [c.id, c]));
   for (const c of list) for (const m of c.members) if (!S.contacts.has(m.id)) S.users.set(m.id, m);
   updateTitle();
+  for (const c of list) if (c.missing?.length) E2E.fillMissing(c);
+}
+
+const refreshConv = () => loadConvs();
+
+// Er zijn sleutels bijgekomen: berichten die nog op slot zaten opnieuw proberen.
+async function onKeys(e) {
+  await E2E.loadKeys(e.c).catch(() => {});
+  const b = S.msgs.get(e.c);
+  if (b) await E2E.decryptAll(b.list.filter((m) => m.locked));
+  const conv = S.convs.get(e.c);
+  if (conv?.last?.locked) await E2E.decrypt(conv.last, false);
+  renderList();
+  if (S.cur === e.c) renderMessages({ keepScroll: true });
 }
 
 function renderMe() {
@@ -518,6 +898,7 @@ const Live = {
         const last = list.filter((m) => m.id).at(-1);
         if (last) {
           const r = await api('GET', `conversations/${S.cur}/messages?after=${last.id}`);
+          await E2E.decryptAll(r.messages);
           for (const m of r.messages) upsertMessage(m);
         }
       }
@@ -557,6 +938,7 @@ function onEvent(e) {
     case 'contacts': return onContacts(e);
     case 'conv': return onConv(e);
     case 'call': return Call.onSignal(e);
+    case 'keys': return onKeys(e);
     case 'announcement':
       S.me.announcement = e.text;
       if (S.cur === 'home') renderPane();
@@ -642,6 +1024,7 @@ function upsertMessage(m) {
 }
 
 async function onMessage(m) {
+  await E2E.decrypt(m);
   let conv = S.convs.get(m.c);
   if (!conv) {
     await loadConvs();
@@ -696,6 +1079,7 @@ function previewText(m) {
   if (!m) return '';
   if (m.rm) return 'Bericht verwijderd door de beheerder';
   if (m.del) return 'Bericht verwijderd';
+  if (m.locked) return '🔒 Versleuteld bericht';
   if (m.k === 'photo') return m.b ? `📷 ${m.b}` : '📷 Foto';
   if (m.k === 'call') return callText(m);
   if (m.k === 'system') return systemText(m);
@@ -908,6 +1292,7 @@ async function openConv(id) {
   if (!b.loaded) {
     try {
       const r = await api('GET', `conversations/${id}/messages`);
+      await E2E.decryptAll(r.messages);
       b.list = r.messages.concat(b.list.filter((m) => !m.id || m.id > (r.messages.at(-1)?.id || 0)));
       b.more = r.more;
       b.loaded = true;
@@ -919,7 +1304,24 @@ async function openConv(id) {
   const last = b.list.filter((m) => m.id).at(-1);
   if (last) markRead(id, last.id);
   renderList();
+  encryptOld(id);
   if (window.innerWidth > 720) setTimeout(() => $('#compose-text')?.focus(), 0);
+}
+
+// Berichten van vóór de versleuteling: de afzender versleutelt ze zelf alsnog.
+async function encryptOld(convId) {
+  const conv = S.convs.get(convId);
+  if (!conv || conv.left) return;
+  const old = bucket(convId).list.filter((m) => m.id && m.u === S.me.id && m.k === 'text' && !m.e && !m.del && !m.rm);
+  for (const m of old) {
+    try {
+      const sealed = await E2E.encrypt(convId, m.b);
+      const out = await api('PUT', `messages/${m.id}/encrypt`, { body: sealed.body });
+      Object.assign(m, { e: out.e, raw: out.b, mk: sealed.mk });
+    } catch {
+      return;
+    }
+  }
 }
 
 function renderPane() {
@@ -1066,6 +1468,7 @@ function renderMessages({ keepScroll = false } = {}) {
   const prevTop = chat.scrollTop;
   chat.replaceChildren();
   if (b.loaded && b.more) chat.append(h('button', { class: 'btn more', onclick: () => loadOlder(conv.id) }, 'Eerdere berichten laden'));
+  if (b.loaded && !b.more) chat.append(h('div', { class: 'e2e-note' }, '🔒 Berichten en foto\'s in dit gesprek zijn end-to-end versleuteld. Alleen de mensen in dit gesprek kunnen ze lezen.'));
   if (!b.loaded) chat.append(h('div', { class: 'day' }, 'Laden…'));
   let lastDay = null;
   let prev = null;
@@ -1093,6 +1496,7 @@ async function loadOlder(convId) {
   if (!first) return;
   try {
     const r = await api('GET', `conversations/${convId}/messages?before=${first.id}`);
+    await E2E.decryptAll(r.messages);
     b.list = r.messages.concat(b.list);
     b.more = r.more;
     if (S.cur === convId) {
@@ -1130,12 +1534,21 @@ function messageRow(m, first, conv) {
     cls.push('call');
     if (d.missed || d.failed) cls.push('missed');
     text = h('div', { class: 'text' }, svg(d.video ? 'video' : 'phone'), callText(m));
+  } else if (m.locked) {
+    cls.push('gone');
+    text = h('div', { class: 'text', title: 'Dit bericht komt binnen zodra iemand in het gesprek online is die de sleutel heeft' }, '🔒 Dit bericht kan nog niet worden ontsleuteld.');
   } else if (m.k === 'photo') {
+    const plainSrc = m.localUrl || (m.e ? null : `/api/media/${encodeURIComponent(m.media)}`);
     const img = h('img', {
-      class: 'photo', alt: 'Foto', loading: 'lazy',
-      src: m.localUrl || `/api/media/${encodeURIComponent(m.media)}`,
-      onclick: () => lightbox(m.localUrl || `/api/media/${encodeURIComponent(m.media)}`)
+      class: 'photo', alt: 'Foto', loading: 'lazy', src: plainSrc,
+      onclick: () => img.src && lightbox(img.src)
     });
+    if (!plainSrc) {
+      E2E.photoUrl(m).then((url) => {
+        if (url) img.src = url;
+        else img.alt = 'Foto kon niet worden geladen';
+      });
+    }
     if (m.w && m.h) {
       const scale = Math.min(1, 320 / m.w, 260 / m.h);
       img.style.width = `${Math.round(m.w * scale)}px`;
@@ -1290,7 +1703,10 @@ async function sendFromCompose() {
     renderPane();
     if (text === m.b) return;
     try {
-      const out = await api('PATCH', `messages/${m.id}`, { body: text });
+      if (!text) return deleteMsg(m);
+      const sealed = await E2E.encrypt(m.c, text);
+      const out = await api('PATCH', `messages/${m.id}`, { body: sealed.body, enc: 1 });
+      Object.assign(out, { raw: out.b, b: text, mk: sealed.mk });
       upsertMessage(out);
       renderMessages({ keepScroll: true });
     } catch (e) {
@@ -1323,7 +1739,9 @@ async function sendText(convId, text, existing) {
   if (!existing) bucket(convId).list.push(local);
   if (S.cur === convId) renderMessages();
   try {
-    const m = await api('POST', `conversations/${convId}/messages`, { body: text, client_id: cid });
+    const sealed = await E2E.encrypt(convId, text);
+    const m = await api('POST', `conversations/${convId}/messages`, { body: sealed.body, enc: 1, client_id: cid });
+    Object.assign(m, { raw: m.b, b: text, mk: sealed.mk });
     upsertMessage(m);
     const conv = S.convs.get(convId);
     if (conv) { conv.last = m; conv.last_at = m.at; conv.last_read = m.id; }
@@ -1380,7 +1798,15 @@ async function sendPhoto(convId, file, existing) {
     const img = await prepareImage(file);
     local.w = img.w;
     local.h = img.h;
-    const m = await api('POST', `conversations/${convId}/photo?w=${img.w}&h=${img.h}&cid=${cid}`, img.blob);
+    const sealed = await E2E.encrypt(convId, '', new Uint8Array(await img.blob.arrayBuffer()));
+    const res = await fetch(`/api/conversations/${convId}/photo?enc=1&w=${img.w}&h=${img.h}&cid=${cid}`, {
+      method: 'POST', credentials: 'same-origin', body: sealed.media,
+      headers: { 'content-type': 'application/octet-stream', 'x-skitta-body': sealed.body }
+    });
+    const m = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, m.error || 'De foto kon niet worden verstuurd');
+    Object.assign(m, { raw: m.b, b: '', mk: sealed.mk });
+    E2E.media.set(m.media, Promise.resolve(local.localUrl));
     upsertMessage({ ...m, localUrl: local.localUrl });
     const conv = S.convs.get(convId);
     if (conv) { conv.last = m; conv.last_at = m.at; }
@@ -1529,12 +1955,12 @@ function convMenu(conv, x, y) {
 function messageMenu(m, conv, x, y) {
   if (m.k === 'system' || !m.id) return;
   const mine = m.u === S.me.id;
-  const gone = m.del || m.rm;
+  const gone = m.del || m.rm || m.locked;
   const canEdit = mine && m.k === 'text' && !gone && Date.now() - m.at < 24 * 3600e3 && !conv.left;
   popMenu([
-    !gone && m.k !== 'call' && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.k === 'photo' ? location.origin + `/api/media/${m.media}` : m.b.replace(/^> .+?: .*\n/, '')) },
+    !gone && m.k === 'text' && !m.locked && { label: 'Kopiëren', icon: 'copy', run: () => navigator.clipboard?.writeText(m.b.replace(/^> .+?: .*\n/, '')) },
     !gone && !conv.left && m.k !== 'call' && { label: 'Citeren', icon: 'quote', run: () => { S.replyTo = m; S.editing = null; saveDraft(); renderPane(); $('#compose-text')?.focus(); } },
-    !gone && m.k === 'photo' && { label: 'Foto openen', icon: 'photo', run: () => lightbox(`/api/media/${encodeURIComponent(m.media)}`) },
+    !gone && m.k === 'photo' && { label: 'Foto openen', icon: 'photo', run: async () => lightbox(m.e ? await E2E.photoUrl(m) : `/api/media/${encodeURIComponent(m.media)}`) },
     canEdit && '-',
     canEdit && { label: 'Bericht bewerken', icon: 'pencil', run: () => startEdit(m) },
     mine && !gone && m.k !== 'call' && { label: 'Bericht verwijderen', icon: 'trash', run: () => deleteMsg(m) },
@@ -1688,7 +2114,7 @@ function dialog(title, body, buttons, opts = {}) {
     for (const b of buttons) {
       if (b.left) {
         foot.querySelector('.left') || foot.prepend(h('div', { class: 'left' }));
-        foot.querySelector('.left').append(h('button', { class: 'btn', onclick: () => b.run(close) }, b.label));
+        foot.querySelector('.left').append(h('button', { class: 'btn', type: 'button', onclick: () => b.run(close) }, b.label));
         continue;
       }
       foot.append(h('button', {
@@ -1705,7 +2131,7 @@ function dialog(title, body, buttons, opts = {}) {
     }
     const form = h('form', { class: 'dialog', style: opts.width ? { width: `${opts.width}px` } : null, onsubmit: (e) => { e.preventDefault(); foot.querySelector('.btn.default')?.click(); } },
       h('div', { class: 'dtitle' }, h('img', { src: '/img/favicon.png', alt: '' }), title,
-        h('button', { class: 'dclose', type: 'button', title: 'Sluiten', onclick: () => close(undefined) }, '✕')),
+        opts.closable === false ? null : h('button', { class: 'dclose', type: 'button', title: 'Sluiten', onclick: () => close(undefined) }, '✕')),
       h('div', { class: 'dbody' }, body),
       buttons.length ? foot : null);
     overlay = h('div', { class: 'overlay', onpointerdown: (e) => { if (e.target === overlay && opts.dismiss !== false) close(undefined); } }, form);
@@ -1930,8 +2356,9 @@ async function passwordDialog() {
   [{
     label: 'Wijzigen', default: true, run: async (close) => {
       if (pw.value !== pw2.value) { err.textContent = 'De nieuwe wachtwoorden zijn niet hetzelfde'; return; }
+      if (pw.value.length < 8) { err.textContent = 'Wachtwoord moet minimaal 8 tekens zijn'; return; }
       try {
-        await api('POST', 'me/password', { current: cur.value, password: pw.value });
+        await E2E.changePassword(S.me, cur.value, pw.value);
         close(true);
         toast({ title: 'Wachtwoord', text: 'Je wachtwoord is gewijzigd', plain: true });
       } catch (e) {
@@ -2031,7 +2458,7 @@ async function reportDialog(m) {
   const note = h('textarea', { class: 'field', rows: 3, maxlength: 500, placeholder: 'Toelichting (optioneel)' });
   const err = h('div', { class: 'err' });
   await dialog('Bericht melden', h('div', null,
-    h('p', null, `Je meldt dit bericht van ${nameOf(m.u)} bij de beheerder van Skitta. De beheerder ziet alleen dit bericht, niet de rest van het gesprek.`),
+    h('p', null, `Je meldt dit bericht van ${nameOf(m.u)} bij de beheerder van Skitta. Daarvoor wordt alleen dit ene bericht leesbaar gemaakt voor de beheerder; de rest van het gesprek blijft versleuteld.`),
     h('div', { class: 'bubble', style: { padding: '8px', background: '#f3f9fd', border: '1px solid #cfe2ee', borderRadius: '4px', marginBottom: '10px', whiteSpace: 'pre-wrap', maxHeight: '120px', overflow: 'auto' } }, previewText(m)),
     h('fieldset', { class: 'opt-group' }, h('legend', null, 'Waarom meld je dit bericht?'), radios),
     note, err),
@@ -2039,7 +2466,7 @@ async function reportDialog(m) {
     label: 'Melden', default: true, run: async (close) => {
       try {
         const reason = radios.map((r) => r.querySelector('input')).find((i) => i.checked)?.value;
-        await api('POST', `messages/${m.id}/report`, { reason, note: note.value });
+        await api('POST', `messages/${m.id}/report`, { reason, note: note.value, key: m.mk });
         close(true);
         alertDialog('Bedankt voor je melding', 'De beheerder bekijkt het bericht en beslist of het mag blijven staan.');
       } catch (e) {
