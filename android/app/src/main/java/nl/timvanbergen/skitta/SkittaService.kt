@@ -79,14 +79,17 @@ class SkittaService : Service() {
         goForeground()
         if (intent?.action == ACTION_CLEAR) {
             val c = intent.getLongExtra("c", 0L)
+            if (c != 0L) Meldingen.clearConv(this, c) else Meldingen.clearMessages(this)
             if (c != 0L) unread.remove(c) else unread.clear()
             return START_STICKY
         }
+        watchNetwork()
         if (socket == null) connect()
         return START_STICKY
     }
 
     override fun onDestroy() {
+        network?.let { runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         running = false
         stopped = true
         socket?.close(1000, null)
@@ -108,11 +111,13 @@ class SkittaService : Service() {
         socket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 retryDelay = 2_000L
+                lastSeen = System.currentTimeMillis()
                 webSocket.send("""{"t":"idle","on":true}""")
                 schedulePing(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                lastSeen = System.currentTimeMillis()
                 runCatching { handle(JSONObject(text)) }
             }
 
@@ -128,13 +133,41 @@ class SkittaService : Service() {
     }
 
     // Elke 45 seconden een klein teken van leven; de server antwoordt zonder wakker te worden.
+    // Komt er twee keer geen antwoord, dan is de verbinding stil weggevallen: opnieuw verbinden.
+    @Volatile private var lastSeen = 0L
+
     private fun schedulePing(ws: WebSocket) {
         main.postDelayed({
             if (socket === ws && !stopped) {
+                if (System.currentTimeMillis() - lastSeen > 100_000L) {
+                    ws.cancel()
+                    return@postDelayed
+                }
                 ws.send("""{"t":"ping"}""")
                 schedulePing(ws)
             }
         }, 45_000L)
+    }
+
+    private var network: android.net.ConnectivityManager.NetworkCallback? = null
+
+    // Wifi <-> 4G: de oude verbinding is dan dood, meteen een nieuwe maken.
+    private fun watchNetwork() {
+        if (network != null) return
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(n: android.net.Network) {
+                main.post {
+                    if (stopped) return@post
+                    retryDelay = 2_000L
+                    main.removeCallbacksAndMessages(null)
+                    socket?.cancel()
+                    socket = null
+                    connect()
+                }
+            }
+        }
+        network = cb
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(cb) }
     }
 
     private fun retry(code: Int) {
@@ -196,6 +229,13 @@ class SkittaService : Service() {
                 }
             }
             "conv" -> Thread { refreshNames() }.start()
+            "read" -> {
+                if (e.optLong("u") == myId) {
+                    val c = e.optLong("c")
+                    unread.remove(c)
+                    Meldingen.clearConv(this, c)
+                }
+            }
             "kick" -> {
                 stopped = true
                 stopSelf()
@@ -326,7 +366,11 @@ object Meldingen {
         return PendingIntent.getActivity(context, c.toInt(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    private const val GROUP = "skitta-berichten"
+    private const val SUMMARY_ID = 2
+
     fun show(context: Context, id: Int, channel: String, title: String, text: String, c: Long) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val n = Notification.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat)
             .setColor(context.getColor(R.color.accent))
@@ -334,9 +378,31 @@ object Meldingen {
             .setContentText(text)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_MESSAGE)
+            .setGroup(GROUP)
             .setContentIntent(openApp(context, c))
             .build()
-        runCatching { (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(id, n) }
+        runCatching { nm.notify(id, n) }
+        // Meerdere gesprekken: onder elkaar in één groep.
+        val summary = Notification.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setColor(context.getColor(R.color.accent))
+            .setContentTitle("Skitta")
+            .setContentText("Nieuwe berichten")
+            .setGroup(GROUP)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context, 0))
+            .build()
+        runCatching { nm.notify(SUMMARY_ID, summary) }
+    }
+
+    /** De melding van één gesprek weg (gelezen); is er daarna niets meer over, dan ook de groep. */
+    fun clearConv(context: Context, c: Long) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(c.toInt())
+        val left = nm.activeNotifications.count { it.id != 1 && it.id != SUMMARY_ID && it.id != CALL_ID }
+        if (left == 0) nm.cancel(SUMMARY_ID)
     }
 
     fun call(context: Context, name: String, video: Boolean, c: Long) {

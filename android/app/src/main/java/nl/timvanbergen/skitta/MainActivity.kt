@@ -88,6 +88,30 @@ class MainActivity : ComponentActivity() {
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Batterijbesparing legt achtergrond-apps stil (vooral op Samsung), dan komen meldingen te laat of niet.
+     * Eén keer vragen of Skitta mag blijven draaien; daarna pas de vraag over de verbindingsmelding.
+     */
+    private fun askBattery(): Boolean {
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        if (prefs().getBoolean("vroeg_batterij", false) || pm.isIgnoringBatteryOptimizations(packageName)) return false
+        prefs().edit().putBoolean("vroeg_batterij", true).apply()
+        web.postDelayed({
+            if (isFinishing) return@postDelayed
+            android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Meldingen altijd op tijd")
+                .setMessage("Android legt apps op de achtergrond soms stil om batterij te sparen. Dan komen berichten en oproepen te laat of niet binnen.\n\nSta in het volgende scherm toe dat Skitta op de achtergrond mag blijven draaien. Skitta gebruikt daar bijna geen stroom voor.")
+                .setPositiveButton("Toestaan") { _, _ ->
+                    runCatching {
+                        startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                    }
+                }
+                .setNegativeButton("Niet nu", null)
+                .show()
+        }, 2000)
+        return true
+    }
+
     /** Eén keer vragen of de melding "Skitta is verbonden" weg mag (de verbinding blijft gewoon werken). */
     private fun askHideConnection() {
         if (prefs().getBoolean("vroeg_verbergen", false) || Meldingen.connectionHidden(this)) return
@@ -350,8 +374,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         inFront = true
         SkittaService.start(this)
-        Meldingen.clearMessages(this)
-        SkittaService.clear(this, 0L)
+        // Meldingen verdwijnen per gesprek zodra je het leest (hier, of op een ander apparaat).
         Updater.resume(this)
         Updater.checkQuietly(this)
     }
@@ -477,7 +500,7 @@ class MainActivity : ComponentActivity() {
                     askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 SkittaService.start(this@MainActivity)
-                askHideConnection()
+                if (!askBattery()) askHideConnection()
                 openPending()
                 Updater.justUpdated(this@MainActivity)?.let { name ->
                     web.evaluateJavascript("window.skittaToast && skittaToast(${JSONObject.quote("Bijgewerkt naar versie $name")})", null)
@@ -539,6 +562,16 @@ class MainActivity : ComponentActivity() {
                 return JSONObject().put("mime", mime).put("data", Base64.encodeToString(bytes, Base64.NO_WRAP)).toString()
             }
             return ""
+        }
+
+        /** Gesprek geopend of gelezen: de melding ervan weghalen. */
+        @JavascriptInterface
+        fun clearConv(c: String) {
+            val conv = c.toLongOrNull() ?: return
+            runOnUiThread {
+                Meldingen.clearConv(this@MainActivity, conv)
+                SkittaService.clear(this@MainActivity, conv)
+            }
         }
 
         @JavascriptInterface

@@ -1350,6 +1350,7 @@ function onRead(e) {
 
 let readTimer = null;
 function markRead(convId, id) {
+  try { Native.api?.clearConv?.(String(convId)); } catch {}
   const conv = S.convs.get(convId);
   if (!conv || !id) return;
   conv.unread = 0;
@@ -1672,6 +1673,7 @@ function homeView() {
         h('ul', { class: 'tips' },
           h('li', null, h('a', { href: '/download/Skitta.apk' }, 'Android-app downloaden'), ' (APK). Met meldingen, ook als de app dicht is, en updates vanzelf.'),
           h('li', null, h('a', { href: '/download/Skitta-mac.zip' }, 'Mac-app downloaden'), '. Uitpakken, naar Programma\'s slepen, en de eerste keer met rechts klikken → Open.'),
+          h('li', null, h('a', { href: '/download/Skitta-windows.zip' }, 'Windows-app downloaden'), '. Uitpakken en Skitta.exe openen. Krijg je een blauw "Windows heeft uw pc beschermd"-venster: Meer informatie → Toch uitvoeren.'),
           h('li', null, 'iPhone: open deze site in Safari, tik op Deel → ', h('b', null, 'Zet op beginscherm'), ', en zet daarna meldingen aan.')))),
       h('div', { class: 'card' }, h('h2', null, 'Aan de slag'), h('div', { class: 'card-body' },
         h('ul', { class: 'tips' },
