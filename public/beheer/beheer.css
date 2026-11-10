@@ -1,0 +1,70 @@
+/* Beheer: zelfde stijl als de app, maar als gewone pagina die mag scrollen. */
+body { overflow: auto; background: linear-gradient(#ffffff, #eef7fc 400px) fixed; }
+.adm { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
+.adm-head { display: flex; align-items: center; gap: 14px; padding: 18px 0 12px; }
+.adm-head img { width: 52px; height: 52px; mix-blend-mode: multiply; }
+.adm-head h1 { margin: 0; font-size: 22px; font-weight: 400; color: #0b6fa0; }
+.adm-head p { margin: 2px 0 0; color: var(--muted); }
+.adm-head .btn { margin-left: auto; text-decoration: none; color: inherit; }
+.adm-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.adm-tabs button {
+  height: 30px; padding: 0 14px; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; background: none; color: #46606f; margin-bottom: -1px; white-space: nowrap;
+}
+.adm-tabs button:hover { color: #000; background: linear-gradient(#fff, #eaf5fc); }
+.adm-tabs button.on { background: #fff; border-color: var(--line); color: #000; font-weight: 600; }
+.adm-body { background: #fff; border: 1px solid var(--line); border-top: none; padding: 16px; min-height: 300px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.stat { border: 1px solid #cfe2ee; border-radius: 4px; padding: 10px 12px; background: linear-gradient(#fff, #f3f9fd); }
+.stat .n { font-size: 24px; color: #0b6fa0; }
+.stat .l { color: var(--muted); }
+.stat.alert .n { color: #d4302b; }
+
+.filters { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filters .grow { flex: 1; }
+.seg { display: inline-flex; }
+.seg .btn { border-radius: 0; margin-left: -1px; }
+.seg .btn:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.seg .btn:last-child { border-radius: 0 3px 3px 0; }
+.seg .btn.on { border-color: #2c628b; background: linear-gradient(#e5f4fc 0%, #c4e5f6 49%, #98d1ef 50%, #68b3db 100%); }
+
+.report { border: 1px solid #d5e3ec; border-radius: 4px; margin-bottom: 12px; overflow: hidden; }
+.report-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 7px 10px; background: linear-gradient(#f8fcfe, #e8f4fb); border-bottom: 1px solid #d9e9f3; }
+.report-head .reason { font-weight: 600; color: #8a1d18; }
+.report-head .meta { color: var(--muted); }
+.report-body { padding: 10px; display: grid; gap: 8px; }
+.report-msg { padding: 10px 12px; background: #fffdf2; border: 1px solid #eadf9f; border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.report-msg img { display: block; max-width: 320px; max-height: 260px; margin-bottom: 6px; border: 1px solid #ddd; }
+.report-note { color: #3e5566; }
+.report-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; background: #f4f8fa; border-top: 1px solid #e3edf3; }
+.report-actions .grow { flex: 1; }
+.report-actions select { height: 23px; }
+.verdict { font-weight: 600; }
+.verdict.goed { color: #3f840c; }
+.verdict.fout { color: #c51f17; }
+
+table.users { width: 100%; border-collapse: collapse; }
+table.users th { text-align: left; font-weight: 600; color: #46606f; padding: 6px 8px; border-bottom: 1px solid var(--line); background: linear-gradient(#fff, #eef6fb); white-space: nowrap; }
+table.users td { padding: 6px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+table.users tr:hover td { background: #f6fbfe; }
+table.users .nm { display: flex; gap: 8px; align-items: center; }
+table.users .nm div div:last-child { color: var(--muted); font-size: 11px; }
+table.users .acts { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+table.users .acts .btn { min-width: 0; }
+.pill { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; line-height: 16px; background: #e6eef3; color: #46606f; }
+.pill.red { background: #fde3e1; color: #a5130f; }
+.pill.blue { background: #dff3fd; color: #0b6fa0; }
+.pill.green { background: #e5f6d8; color: #3f840c; }
+.table-wrap { overflow-x: auto; }
+
+.set-row { display: grid; gap: 6px; margin-bottom: 18px; max-width: 640px; }
+.set-row h3 { margin: 0; font-size: 14px; font-weight: 600; color: #1e3287; }
+.set-row textarea { width: 100%; }
+.set-row .line { display: flex; gap: 8px; align-items: center; }
+.saved { color: #3f840c; }
+.bar-meter { height: 10px; background: #e6eef3; border-radius: 5px; overflow: hidden; max-width: 400px; }
+.bar-meter div { height: 100%; background: linear-gradient(90deg, #36c3f6, #0896d2); }
+
+@media (max-width: 720px) {
+  table.users .hide-sm { display: none; }
+}

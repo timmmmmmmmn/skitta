@@ -1,0 +1,31 @@
+name = "skitta"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "skitta-db"
+database_id = "1097703c-52e1-4bcf-8195-589fdc8a7c52"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
+
+# Foto's: zodra R2 aanstaat, onderstaande regels aanzetten (zonder R2 staan foto's in D1).
+# [[r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "skitta-media"
+
+[[routes]]
+pattern = "skitta.timvanbergen.nl"
+custom_domain = true

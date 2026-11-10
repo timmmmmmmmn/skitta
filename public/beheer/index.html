@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skitta Beheer</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/img/favicon.png">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/beheer/beheer.css">
+  <script src="/beheer/beheer.js" defer></script>
+</head>
+<body>
+  <div class="adm">
+    <header class="adm-head">
+      <img src="/img/icon-192.png" alt="">
+      <div>
+        <h1>Skitta Beheer</h1>
+        <p id="who"></p>
+      </div>
+      <a class="btn" href="/">Naar Skitta</a>
+    </header>
+    <nav class="adm-tabs" id="tabs" hidden>
+      <button data-tab="overzicht" class="on">Overzicht</button>
+      <button data-tab="meldingen">Meldingen <span class="tab-count" id="open-count"></span></button>
+      <button data-tab="gebruikers">Gebruikers</button>
+      <button data-tab="instellingen">Instellingen</button>
+    </nav>
+    <main class="adm-body" id="body"><p class="muted">Laden…</p></main>
+  </div>
+  <div id="layer"></div>
+</body>
+</html>
