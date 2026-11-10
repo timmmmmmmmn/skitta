@@ -1,6 +1,7 @@
-// Windows: het Skitta-icoon en de versie in skitta.exe zetten.
+// Windows: het Skitta-icoon en de productnaam in skitta.exe zetten (wordt op Windows gebouwd).
 fn main() {
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+    #[cfg(windows)]
+    {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("skitta.ico");
         res.set("ProductName", "Skitta");
