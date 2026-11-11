@@ -62,9 +62,24 @@ stijl.textContent = `
 .glisse-icoon svg { width: 22px; height: 22px; stroke-width: 2; }
 .glisse-plus .glisse-icoon svg { width: 26px; height: 26px; stroke-width: 2.4; }
 .glisse-segment { --lg-fill: var(--accent); align-self: flex-start; }
+html.glisse-beweegt :is(.glisse-balk, .glisse-segment) .lg-glass { --lg-filter: saturate(1.5) !important; }
 .glisse-maat { position: absolute; visibility: hidden; white-space: nowrap; font-size: 13px; font-weight: 500; }
 `;
 document.head.append(stijl);
+
+// ---------- Breking alleen in rust ----------
+// Chromium rekent een SVG-filter in backdrop-filter elk frame opnieuw uit, niet op de GPU: tijdens scrollen
+// kost dat ~10× zoveel tekenwerk en zakt de framerate. Zolang er iets beweegt houden we alleen de blur
+// (goedkoop); staat alles stil, dan komt de breking terug.
+let rust = 0;
+function beweegt() {
+  document.documentElement.classList.add('glisse-beweegt');
+  clearTimeout(rust);
+  rust = setTimeout(() => document.documentElement.classList.remove('glisse-beweegt'), 220);
+}
+addEventListener('scroll', beweegt, { capture: true, passive: true });
+addEventListener('touchmove', beweegt, { capture: true, passive: true });
+addEventListener('wheel', beweegt, { capture: true, passive: true });
 
 const svg = (html) => <span className="glisse-icoon" dangerouslySetInnerHTML={{ __html: html }} />;
 
