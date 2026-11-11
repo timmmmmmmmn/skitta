@@ -663,6 +663,7 @@ const Sound = {
         if (nat.quiet() && !['HANGUP', 'CALL_OUT', 'CALL_INIT', 'BUSY', 'CALL_ERROR1'].includes(name)) return;
       } catch {}
     }
+    if (name === 'CALL_IN' && document.visibilityState !== 'visible' && desktopAlerts()) return;
     if (!S.opts.sounds && !force) return;
     if (!force && S.me?.presence_pref === 'dnd' && !['LOGIN', 'LOGOUT', 'CALL_OUT', 'CALL_INIT', 'HANGUP', 'BUSY'].includes(name)) return;
     const a = loop ? new Audio(`/sounds/${this.file(name)}.m4a`) : this.el(name).cloneNode();
@@ -1165,7 +1166,7 @@ async function onMessage(m) {
       conv.unread = (conv.unread || 0) + 1;
       if (!isMuted(conv) && !(m.k === 'call' && parseJson(m.b).missed && Call.lastMissedNotice === m.c)) notifyMessage(conv, m);
     }
-    if (m.k !== 'call' && !isMuted(conv)) Sound.play('IM');
+    if (m.k !== 'call' && !isMuted(conv) && !desktopAlerts()) Sound.play('IM');
   }
   updateTitle();
   renderList();
@@ -1186,6 +1187,14 @@ function appendMessage(m) {
   chat.append(messageRow(m, first, conv));
   if (nearBottom || m.u === S.me.id) chat.scrollTop = chat.scrollHeight;
   return true;
+}
+
+// Desktop-app en Skitta niet in beeld: de melding van het systeem brengt het geluid mee (en zwijgt
+// dan vanzelf mee met Niet storen of Focus), dus de pagina speelt het niet nog eens.
+function desktopAlerts() {
+  let desktop = false;
+  try { desktop = Native.api?.platform?.() === 'desktop'; } catch {}
+  return desktop && (document.visibilityState !== 'visible' || !document.hasFocus());
 }
 
 function notifyMessage(conv, m) {
@@ -2229,6 +2238,31 @@ function confirmPaste(convId, files) {
     { label: 'Annuleren', value: null }
   ]).then(() => setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 60000));
 }
+
+// Plakken met Ctrl/Cmd+V waar je ook in het gesprek bent (niet alleen in het tekstvak): gekopieerde
+// foto's, video's en bestanden (ook uit Verkenner of Finder) gaan via het voorbeeldvenster de deur uit.
+document.addEventListener('paste', (e) => {
+  if (e.defaultPrevented || typeof S.cur !== 'number' || !S.me) return;
+  const t = e.target;
+  if (t?.id === 'compose-text') return; // dat regelt het tekstvak zelf
+  if (t?.closest?.('input, textarea, [contenteditable="true"], .overlay, .dialog')) return;
+  const conv = S.convs.get(S.cur);
+  if (!conv || conv.left) return;
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) {
+    e.preventDefault();
+    return confirmPaste(conv.id, files);
+  }
+  const text = e.clipboardData?.getData('text/plain');
+  const ta = $('#compose-text');
+  if (text && ta) {
+    e.preventDefault();
+    ta.focus();
+    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+    autoGrow(ta);
+    sendIcon();
+  }
+});
 
 // Van het toetsenbord (Samsung, Gboard) via de Android-app.
 window.skittaPasteImage = (data, mime) => {
@@ -4687,6 +4721,8 @@ if ('serviceWorker' in navigator) {
 
 // Een melding tonen terwijl Skitta open is (maar niet in beeld).
 async function showLocal(title, body, c, kind = 'msg') {
+  // Niet storen: geen meldingen (en geen geluid, zie Sound.play).
+  if (S.me?.presence_pref === 'dnd') return;
   if (Native.notify(title, body, c, kind)) return;
   if (!S.opts.notifications || !('Notification' in window) || Notification.permission !== 'granted') return;
   const options = { body, icon: '/img/icon-192.png', badge: '/img/badge.png', tag: kind === 'call' ? 'call' : `c${c}`, data: { c }, requireInteraction: kind === 'call' };

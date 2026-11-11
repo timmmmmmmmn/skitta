@@ -1,13 +1,12 @@
 [package]
 name = "skitta"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 
 [dependencies]
 notify-rust = "4.19.0"
 png = "0.18.1"
 rfd = "0.18.0"
-rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav"] }
 serde_json = "1.0.154"
 tao = "0.37.2"
 tray-icon = "0.26.1"
@@ -22,3 +21,10 @@ opt-level = "s"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
+
+# Geluiden: op macOS speelt het systeem ze bij de melding af; elders doet de app het zelf.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell"] }

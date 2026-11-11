@@ -177,13 +177,21 @@ export class Hub extends DurableObject {
       this.pushed ||= new Set();
       if (this.pushed.has(m.d.id)) return;
       this.pushed.add(m.d.id);
-      const away = others.filter((id) => !this.state(id).conns);
+      const away = await this.notDnd(others.filter((id) => !this.state(id).conns));
       if (!away.length) return;
       const caller = await this.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(a.uid).first();
       this.ctx.waitUntil(pushTo(this.env, away, {
         t: 'call', title: conv.topic || 'Groepsgesprek', body: `${caller?.display_name || 'Iemand'} is een groepsgesprek begonnen`, tag: 'call', c: g
       }, { ttl: 60 }).catch(() => {}));
     }
+  }
+
+  // Wie op "Niet storen" staat, krijgt geen pushmelding voor oproepen.
+  async notDnd(ids) {
+    if (!ids.length) return ids;
+    const { results } = await this.env.DB.prepare(`SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')}) AND presence = 'dnd'`).bind(...ids).all();
+    const quiet = new Set(results.map((r) => r.id));
+    return ids.filter((id) => !quiet.has(id));
   }
 
   // Niemand van de gebelde persoon is online: met een pushmelding wakker maken (één keer per oproep).
@@ -197,6 +205,7 @@ export class Hub extends DurableObject {
     this.pushed ||= new Set();
     if (this.pushed.has(d.id)) return;
     this.pushed.add(d.id);
+    if (!(await this.notDnd([to])).length) return;
     const caller = await this.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(from).first();
     this.ctx.waitUntil(pushTo(this.env, [to], {
       t: 'call', title: caller?.display_name || 'Skitta', body: d.video ? 'wil met je videobellen' : 'belt je', tag: 'call', c: Number(d.conv) || 0

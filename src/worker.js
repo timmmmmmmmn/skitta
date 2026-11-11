@@ -382,7 +382,14 @@ async function pushAway(env, userIds, payload, opts) {
   const ids = [...new Set(userIds)].filter(Boolean);
   if (!ids.length) return;
   const states = await hub(env).states(ids);
-  const away = ids.filter((id) => !states[id]?.conns || states[id]?.idle);
+  let away = ids.filter((id) => !states[id]?.conns || states[id]?.idle);
+  // Wie op "Niet storen" staat, krijgt geen pushmeldingen.
+  if (away.length) {
+    const marks = away.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(`SELECT id FROM users WHERE id IN (${marks}) AND presence = 'dnd'`).bind(...away).all();
+    const quiet = new Set(results.map((r) => r.id));
+    away = away.filter((id) => !quiet.has(id));
+  }
   if (away.length) await pushTo(env, away, payload, opts);
 }
 

@@ -85,6 +85,11 @@ impl State {
         }
     }
 
+    /// Staat de gebruiker nu op "Niet storen"? Steeds even opvragen: de status kan op een ander apparaat veranderd zijn.
+    fn dnd(&self) -> bool {
+        self.get("me").is_some_and(|me| me["presence_pref"] == "dnd")
+    }
+
     fn name(&mut self, id: i64) -> String {
         if !self.names.contains_key(&id) {
             self.refresh();
@@ -135,6 +140,10 @@ fn run(state: &mut State, stop: &AtomicBool, proxy: &EventLoopProxy<UserEvent>) 
                         return Err(Stop::Unauthorized);
                     }
                     if let Some((title, body)) = handle(state, &e) {
+                        // Niet storen (de status in Skitta): geen melding en geen geluid.
+                        if state.dnd() {
+                            continue;
+                        }
                         let call = e["t"] == "call";
                         let _ = proxy.send_event(UserEvent::Notify { title, body, call });
                     }

@@ -93,6 +93,8 @@ struct App {
     background: Option<Arc<AtomicBool>>,
     tray: Option<TrayIcon>,
     unread: u32,
+    #[cfg(target_os = "macos")]
+    menu: Option<Menu>,
     /// Versies waarvoor al "Later" is gekozen: daar niet opnieuw over zeuren (tot de volgende start).
     skipped: Vec<String>,
 }
@@ -176,8 +178,8 @@ impl App {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(msg) else { return };
         match v["t"].as_str() {
             Some("notify") => {
-                // De pagina vraagt dit alleen als Skitta niet in beeld is.
-                notify(v["title"].as_str().unwrap_or("Skitta"), v["body"].as_str().unwrap_or(""));
+                // De pagina vraagt dit alleen als Skitta niet in beeld is (en niet op Niet storen staat).
+                alert(v["title"].as_str().unwrap_or("Skitta"), v["body"].as_str().unwrap_or(""), v["kind"] == "call");
             }
             Some("badge") => self.set_unread(v["n"].as_u64().unwrap_or(0) as u32),
             Some("signedOut") => self.stop_background(),
@@ -187,10 +189,59 @@ impl App {
     }
 }
 
-// De klassieke geluiden bij meldingen van de achtergrondverbinding (de pagina speelt ze zelf als die leeft).
+// De klassieke geluiden bij meldingen.
 const SOUND_IM: &[u8] = include_bytes!("../sounds/IM.wav");
 const SOUND_CALL: &[u8] = include_bytes!("../sounds/CALL_IN.wav");
 
+/// Melding met het klassieke geluid. Op macOS speelt het systeem het geluid bij de melding af, zodat het
+/// vanzelf meezwijgt met Focus/Niet storen. Op Windows spelen wij het, behalve als Windows aangeeft dat er
+/// nu geen meldingen welkom zijn (Niet storen, stille uren, presentatie of een spel op volledig scherm).
+pub fn alert(title: &str, body: &str, call: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = notify_rust::Notification::new()
+            .appname("Skitta")
+            .summary(title)
+            .body(body)
+            .sound_name(if call { "Skitta-oproep" } else { "Skitta-bericht" })
+            .show();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if !system_quiet() {
+            play_sound(call);
+        }
+        notify(title, body);
+    }
+}
+
+#[cfg(windows)]
+fn system_quiet() -> bool {
+    use windows_sys::Win32::UI::Shell::{QUNS_ACCEPTS_NOTIFICATIONS, SHQueryUserNotificationState};
+    let mut state = 0;
+    unsafe { SHQueryUserNotificationState(&mut state) == 0 && state != QUNS_ACCEPTS_NOTIFICATIONS }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn system_quiet() -> bool {
+    false
+}
+
+/// macOS zoekt meldingsgeluiden op naam, onder andere in ~/Library/Sounds: daar zetten we ze neer.
+#[cfg(target_os = "macos")]
+fn install_sounds() {
+    let Some(home) = std::env::var_os("HOME") else { return };
+    let dir = PathBuf::from(home).join("Library/Sounds");
+    let _ = std::fs::create_dir_all(&dir);
+    for (name, data) in [("Skitta-bericht.wav", SOUND_IM), ("Skitta-oproep.wav", SOUND_CALL)] {
+        let path = dir.join(name);
+        if std::fs::metadata(&path).map(|m| m.len() as usize).ok() != Some(data.len()) {
+            let _ = std::fs::write(&path, data);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 pub fn play_sound(call: bool) {
     std::thread::spawn(move || {
         let Ok(sink) = rodio::DeviceSinkBuilder::open_default_sink() else { return };
@@ -223,6 +274,57 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     }
 }
 
+// macOS: een echte menubalk. Zonder menu "Wijzig" doen Cmd+C, Cmd+V, Cmd+X en Cmd+A niets in de
+// webweergave (plakken van foto's en video's dus ook niet).
+#[cfg(target_os = "macos")]
+fn mac_menu() -> Option<Menu> {
+    use tray_icon::menu::Submenu;
+    use tray_icon::menu::accelerator::Accelerator;
+    let menu = Menu::new();
+    let app = Submenu::with_items(
+        "Skitta",
+        true,
+        &[
+            &PredefinedMenuItem::about(Some("Over Skitta"), None),
+            &MenuItem::with_id("update", "Controleren op updates…", true, None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(Some("Verberg Skitta")),
+            &PredefinedMenuItem::hide_others(Some("Verberg andere")),
+            &PredefinedMenuItem::show_all(Some("Toon alles")),
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id("quit", "Stop Skitta", true, "cmd+q".parse::<Accelerator>().ok()),
+        ],
+    )
+    .ok()?;
+    let edit = Submenu::with_items(
+        "Wijzig",
+        true,
+        &[
+            &PredefinedMenuItem::undo(Some("Herstel")),
+            &PredefinedMenuItem::redo(Some("Opnieuw")),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::cut(Some("Knip")),
+            &PredefinedMenuItem::copy(Some("Kopieer")),
+            &PredefinedMenuItem::paste(Some("Plak")),
+            &PredefinedMenuItem::select_all(Some("Selecteer alles")),
+        ],
+    )
+    .ok()?;
+    let window = Submenu::with_items(
+        "Venster",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(Some("Minimaliseer")),
+            &PredefinedMenuItem::fullscreen(Some("Schermvullende weergave")),
+            &PredefinedMenuItem::close_window(Some("Sluit venster")),
+        ],
+    )
+    .ok()?;
+    menu.append_items(&[&app, &edit, &window]).ok()?;
+    menu.init_for_nsapp();
+    Some(menu)
+}
+
 fn make_tray() -> Option<TrayIcon> {
     let (rgba, w, h) = icon_rgba();
     let icon = tray_icon::Icon::from_rgba(rgba, w, h).ok()?;
@@ -244,7 +346,10 @@ fn make_tray() -> Option<TrayIcon> {
 
 fn main() {
     #[cfg(target_os = "macos")]
-    let _ = notify_rust::set_application("nl.timvanbergen.skitta");
+    {
+        let _ = notify_rust::set_application("nl.timvanbergen.skitta");
+        install_sounds();
+    }
 
     updater::cleanup();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -280,6 +385,8 @@ fn main() {
         tray: None,
         unread: 0,
         skipped: Vec::new(),
+        #[cfg(target_os = "macos")]
+        menu: None,
     };
     app.build_webview();
 
@@ -290,8 +397,12 @@ fn main() {
         };
         match event {
             Event::NewEvents(StartCause::Init) => {
-                // Op macOS mag het systeemvak-icoon pas als de lus draait.
+                // Op macOS mag het systeemvak-icoon (en de menubalk) pas als de lus draait.
                 app.tray = make_tray();
+                #[cfg(target_os = "macos")]
+                {
+                    app.menu = mac_menu();
+                }
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 if app.hidden_since.is_some_and(|t| t.elapsed() >= SLEEP_AFTER) {
@@ -302,10 +413,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             Event::Reopen { .. } => app.show(),
             Event::UserEvent(UserEvent::Ipc(msg)) => app.handle_ipc(&msg),
-            Event::UserEvent(UserEvent::Notify { title, body, call }) => {
-                play_sound(call);
-                notify(&title, &body);
-            }
+            Event::UserEvent(UserEvent::Notify { title, body, call }) => alert(&title, &body, call),
             Event::UserEvent(UserEvent::Update(Some(u), manual)) => {
                 if manual || !app.skipped.contains(&u.version) {
                     if updater::ask(&u) {
