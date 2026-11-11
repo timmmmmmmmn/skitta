@@ -3725,29 +3725,57 @@ function nativePath(name) {
   return out.join(' ');
 }
 
+// Glisse (glisse.js, zie glisse/): null als het toestel het niet aankan, dan blijft alles zoals het was.
+const glisse = document.documentElement.classList.contains('glisse')
+  ? import('/glisse.js').then((g) => (g.kan() ? g : null)).catch(() => null).then((g) => {
+    if (!g) document.documentElement.classList.remove('glisse');
+    return g;
+  })
+  : Promise.resolve(null);
+let glisseBar = null;
+
 function glassBar() {
   const api = Native.api;
-  if (!api?.glassBar) return;
+  // Zolang Glisse nog laadt geen native balk, anders flitst die even.
+  if (document.documentElement.classList.contains('glisse') && !glisseBar) return;
+  if (!glisseBar && !api?.glassBar) return;
   const pill = $('#mnav-pill').getBoundingClientRect();
   const add = $('#mnav-add').getBoundingClientRect();
   const visible = mobile() && !!S.me && !$('#app').classList.contains('show-pane') && !overlayOpen();
   const box = (r) => ({ x: r.left, y: r.top, w: r.width, h: r.height });
   let unread = 0;
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
+  const tabs = [
+    { id: 'recent', title: unread ? `Chats (${unread})` : 'Chats', icon: 'chat' },
+    { id: 'contacts', title: 'Contacten', icon: 'user' },
+    { id: 'calls', title: 'Bellen', icon: 'phone' },
+    { id: 'more', title: 'Meer', icon: 'menu' }
+  ];
+  const bar = { pill: box(pill), add: box(add), active: navActive(), dark: document.documentElement.dataset.mode === 'dark', visible };
+  if (glisseBar) {
+    const html = (name) => `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS[name]}"/></svg>`;
+    return glisseBar.update({ ...bar, tabs: tabs.map((t) => ({ ...t, svg: html(t.icon) })), addSvg: html('plus'), addLabel: 'Toevoegen' });
+  }
   try {
-    api.glassBar(JSON.stringify({
-      pill: box(pill), add: box(add), active: navActive(), dark: document.documentElement.dataset.mode === 'dark', visible,
-      tabs: [
-        { id: 'recent', title: unread ? `Chats (${unread})` : 'Chats', icon: ICONS.chat },
-        { id: 'contacts', title: 'Contacten', icon: ICONS.user },
-        { id: 'calls', title: 'Bellen', icon: ICONS.phone },
-        { id: 'more', title: 'Meer', icon: ICONS.menu }
-      ]
-    }));
+    api.glassBar(JSON.stringify({ ...bar, tabs: tabs.map((t) => ({ ...t, icon: ICONS[t.icon] })) }));
   } catch {}
 }
 
 window.skittaGlassNav = (id) => navTo(id);
+glisse.then((g) => {
+  if (g) {
+    glisseBar = g.balk({
+      onNav: navTo,
+      z: 40,
+      onStop: () => {
+        glisseBar = null;
+        document.documentElement.classList.remove('glisse');
+        glassBar();
+      }
+    });
+  }
+  glassBar();
+});
 // Vensters, onderbladen en de galerij liggen boven alles: dan hoort de glazen balk weg.
 const overlayOpen = () => !!document.querySelector('#layer .overlay, #layer .sheet-back, #layer .lightbox, .gallery');
 new MutationObserver(() => glassBar()).observe(document.getElementById('layer'), { childList: true });

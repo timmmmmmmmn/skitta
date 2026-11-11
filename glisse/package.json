@@ -1,0 +1,12 @@
+{
+  "name": "glisse-brug",
+  "private": true,
+  "description": "Bouwt Glisse (Liquid Glass voor het web, MIT) met React tot één los bestand voor de app.",
+  "scripts": { "build": "./bouw.sh" },
+  "dependencies": {
+    "esbuild": "0.25.10",
+    "glisse": "0.5.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}

@@ -10,6 +10,14 @@ try {
   if (opts.mtheme) document.documentElement.dataset.mtheme = opts.mtheme;
 } catch {}
 
+// Glisse (Liquid Glass met echte breking) voor de navigatie in de Android-app, als het toestel het aankan.
+// app.js laadt het en haalt de klasse weg als het niet lukt; dan blijft de gewone glazen balk.
+try {
+  if (/SkittaApp\//.test(navigator.userAgent) && /Chrom(?:e|ium)\//.test(navigator.userAgent) && !localStorage.getItem('glisse-uit')) {
+    document.documentElement.classList.add('glisse');
+  }
+} catch {}
+
 // Licht/donker meteen zetten (telefoon), zodat het scherm niet eerst wit flitst.
 try {
   const o = JSON.parse(localStorage.getItem('skitta.opts') || '{}');
