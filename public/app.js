@@ -155,6 +155,10 @@ const ICONS = {
   code: 'M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6z',
   palette: 'M12 3a9 9 0 000 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16a5 5 0 005-5c0-4.42-4.03-8-9-8zm-5.5 9a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3-4a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm5 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3 4a1.5 1.5 0 110-3 1.5 1.5 0 010 3z',
   moon: 'M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 01-4.4 2.26 5.4 5.4 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z',
+  clock: 'M13 3a9 9 0 00-9 9H1l3.9 3.9L9 12H6a7 7 0 112.05 4.95l-1.42 1.42A9 9 0 1013 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z',
+  dialpad: 'M12 19a2 2 0 100 4 2 2 0 000-4zM6 1a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm12-8a2 2 0 100-4 2 2 0 000 4zm-6 8a2 2 0 100 4 2 2 0 000-4zm6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4zm-6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4z',
+  people: 'M16 11c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
+  adduser: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   block: 'M12 2a10 10 0 100 20 10 10 0 000-20zM4 12c0-4.4 3.6-8 8-8 1.8 0 3.5.6 4.9 1.7L5.7 16.9A7.9 7.9 0 014 12zm8 8c-1.8 0-3.5-.6-4.9-1.7L18.3 7.1A7.9 7.9 0 0120 12c0 4.4-3.6 8-8 8z'
 };
 
@@ -939,6 +943,7 @@ function renderMe() {
   av.style.backgroundImage = me.avatar ? `url("/api/media/${encodeURIComponent(me.avatar)}")` : '';
   if (document.activeElement !== $('#me-mood')) $('#me-mood').value = me.mood || '';
   updateTitle();
+  renderChrome();
 }
 
 function updateTitle() {
@@ -982,7 +987,7 @@ const Live = {
       S.ws = null;
       this.wasDown = true;
       renderMe();
-      if (e.code === 4001) return;
+      if (e.code === 4001 || this.sleeping) return;
       this.retry = setTimeout(async () => {
         try {
           await api('GET', 'me', undefined, { quiet: true });
@@ -1001,9 +1006,31 @@ const Live = {
     }
     return false;
   },
+  // De Android-app gaat uit beeld: de achtergrondverbinding van de app geeft dan de meldingen, dus deze
+  // verbinding mag dicht (anders maakt elk statusje van een contactpersoon de telefoon wakker).
+  sleep() {
+    if (Call.active || GroupCall.active || !S.ws) return;
+    this.sleeping = true;
+    clearTimeout(this.retry);
+    clearInterval(this.pinger);
+    const ws = S.ws;
+    S.ws = null;
+    this.wasDown = true;
+    try { ws.close(1000); } catch {}
+  },
+  wake() {
+    if (!this.sleeping && S.ws) return;
+    this.sleeping = false;
+    if (!S.me || (S.ws && S.ws.readyState <= 1)) return;
+    clearTimeout(this.retry);
+    this.delay = 1000;
+    this.connect();
+  },
   // Na een onderbreking alles bijwerken wat we gemist kunnen hebben.
   async resync() {
     try {
+      // Andere gesprekken die al geladen waren, halen we bij het openen opnieuw op.
+      for (const [c, b] of S.msgs) if (c !== S.cur) b.loaded = false;
       await Promise.all([loadContacts(), loadConvs()]);
       if (typeof S.cur === 'number' && S.msgs.has(S.cur)) {
         const list = S.msgs.get(S.cur).list;
@@ -1414,12 +1441,15 @@ function convVisible(c) {
 }
 
 // Terug in beeld (de app roept dit ook zelf aan): het open gesprek is nu gelezen.
-function readVisible() {
-  if (typeof S.cur !== 'number' || !convVisible(S.cur)) return;
+// force: de app zegt zelf dat hij in beeld is (de pagina weet dat net na terugkeren nog niet altijd).
+function readVisible(force = false) {
+  if (typeof S.cur !== 'number') return;
+  if (force ? mobile() && !$('#app').classList.contains('show-pane') : !convVisible(S.cur)) return;
   const last = S.convs.get(S.cur)?.last;
   if (last?.id) markRead(S.cur, last.id);
 }
-window.skittaResume = () => { readVisible(); if (S.me) renderList(); return true; };
+window.skittaResume = () => { Live.wake(); readVisible(true); if (S.me) renderList(); return true; };
+window.skittaSleep = () => { Live.sleep(); return true; };
 
 // Wordt het gesprek kleiner (toetsenbord komt op, invoerveld groeit), dan blijft de onderkant staan:
 // de laatste berichten schuiven mee omhoog in plaats van achter het toetsenbord te verdwijnen.
@@ -1561,6 +1591,8 @@ function convRow(conv) {
 function showPaneOnMobile(on) {
   $('#app').classList.toggle('show-pane', on);
   renderNav();
+  // De Android-app weet zo welk gesprek in beeld is en haalt de melding ervan weg.
+  try { Native.api?.viewing?.(String(typeof S.cur === 'number' && (on || !mobile()) ? S.cur : 0)); } catch {}
 }
 
 function showHome() {
@@ -1684,6 +1716,7 @@ function renderHead() {
   if (!head || !conv) return;
   const back = h('button', { class: 'tool back', title: 'Terug', onclick: () => { saveDraft(); showPaneOnMobile(false); } }, svg('back'));
   const inCall = Call.active || Call.incoming || GroupCall.active;
+  $('#pane').dataset.title = `${convTitle(conv)} – Gesprek`;
   if (conv.kind === 'direct') {
     const c = S.contacts.get(otherId(conv)) || userOf(otherId(conv));
     const st = statusClass(S.contacts.get(c.id));
@@ -1959,7 +1992,8 @@ function messageRow(m, first, conv) {
     if (mine && !m.pending && !m.failed && !m.del && !m.rm && readByAll(conv, m)) t.append(h('span', { class: 'ticks read', title: 'Gelezen' }, ' ✓✓'));
   }
   if (m.reacts?.length) text.append(reactionChips(m, conv));
-  const row = h('div', { class: cls.join(' '), 'data-id': m.id || '', 'data-cid': m.cid || '' }, from, text, t);
+  const av = first && !['system', 'call'].includes(m.k) ? avatar(userOf(m.u), 'msg-av') : h('span', { class: 'msg-av none-av' });
+  const row = h('div', { class: cls.join(' '), 'data-id': m.id || '', 'data-cid': m.cid || '' }, av, from, text, t);
   row.addEventListener('contextmenu', (e) => {
     if (e.target.closest('a')) return;
     e.preventDefault();
@@ -2879,7 +2913,7 @@ function closeLayer() {
 const glassPicks = new Map();
 function glassMenu(items, x, y, anchor) {
   const nat = Native.api;
-  if (!nat?.glassMenu) return false;
+  if (!nat?.glassMenu || S.opts.mtheme) return false;
   glassPicks.clear();
   const rows = [];
   let n = 0;
@@ -3605,9 +3639,9 @@ function navActive() {
   return S.tab === 'recent' || S.tab === 'calls' ? S.tab : 'contacts';
 }
 
-function navTo(id) {
-  if (id === 'add') return addMenu($('#mnav-add'));
-  if (id === 'more') return moreMenu($('#mnav-pill [data-nav="more"]'));
+function navTo(id, anchor) {
+  if (id === 'add') return addMenu(anchor || $('#mnav-add'));
+  if (id === 'more') return moreMenu(anchor || $('#mnav-pill [data-nav="more"]'));
   setTab(id);
   showPaneOnMobile(false);
   if (id === 'calls') loadCalls();
@@ -3647,7 +3681,7 @@ function addMenu(anchor) {
   popMenu([
     { label: 'Contactpersoon toevoegen', icon: 'user', run: () => addContactDialog() },
     { label: 'Groep maken', icon: 'chat', run: () => groupDialog() }
-  ], r.right - 220, r.top - 90, { anchor });
+  ], r.right - 220, r.top > innerHeight / 2 ? r.top - 90 : r.bottom + 4, { anchor });
 }
 
 const SOURCE_URL = 'https://github.com/timmmmmmmmn/skitta';
@@ -3667,7 +3701,7 @@ function moreMenu(anchor) {
       { label: 'Over Skitta', icon: 'chat', run: aboutDialog }
     ] },
     { label: 'Broncode', icon: 'code', run: () => window.open(SOURCE_URL, '_blank', 'noopener') }
-  ], r.left, r.top - 300, { anchor });
+  ], r.left, r.top > innerHeight / 2 ? r.top - 300 : r.bottom + 4, { anchor });
 }
 
 // ---------- Thema's voor de telefoon (gebaseerd op de mobiele apps door de jaren heen) ----------
@@ -3683,6 +3717,9 @@ function setMobileTheme(t) {
   if (t) document.documentElement.dataset.mtheme = t;
   else delete document.documentElement.dataset.mtheme;
   applyMode();
+  renderNav();
+  renderList();
+  if (typeof S.cur === 'number') renderPane();
 }
 
 function mobileThemeItems() {
@@ -3698,6 +3735,7 @@ function renderNav() {
   let unread = 0;
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
   $('#mnav-count').textContent = unread ? String(unread) : '';
+  renderChrome();
   glassBar();
 }
 
@@ -3741,7 +3779,8 @@ function glassBar() {
   if (!glisseBar && !api?.glassBar) return;
   const pill = $('#mnav-pill').getBoundingClientRect();
   const add = $('#mnav-add').getBoundingClientRect();
-  const visible = mobile() && !!S.me && !$('#app').classList.contains('show-pane') && !overlayOpen();
+  // De oude telefoonversies hebben hun eigen (vaste) tabbalk, zonder glas.
+  const visible = mobile() && !!S.me && !S.opts.mtheme && !$('#app').classList.contains('show-pane') && !overlayOpen();
   const box = (r) => ({ x: r.left, y: r.top, w: r.width, h: r.height });
   let unread = 0;
   for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
@@ -3820,7 +3859,103 @@ function setupNav() {
   applyMode();
   for (const el of document.querySelectorAll('.mi-svg[data-icon]')) el.append(svg(el.dataset.icon));
   for (const b of document.querySelectorAll('#mnav [data-nav]')) b.onclick = () => navTo(b.dataset.nav);
+  for (const b of document.querySelectorAll('#mhead [data-nav], #mtabs [data-nav]')) b.onclick = () => navTo(b.dataset.nav, b);
   if (Native.api) document.documentElement.classList.add('native');
+  $('#mh-me').onclick = () => profileDialog();
+  $('#mh-search').onclick = () => {
+    const on = !$('.side').classList.contains('searching');
+    $('.side').classList.toggle('searching', on);
+    if (on) $('#search').focus();
+  };
+  const acts = {
+    home: showHome, add: () => addContactDialog(), group: () => groupDialog(), calls: () => navTo('calls'),
+    search: () => $('#search').focus(),
+    chat: () => { if (typeof S.cur === 'number') $('#compose-text')?.focus(); else setTab('recent'); }
+  };
+  for (const b of document.querySelectorAll('#toolbar [data-act]')) b.onclick = acts[b.dataset.act];
+  setupDialbar();
+}
+
+// De adresbalk van de oude versies: typ een naam (of kies er een in de lijst) en druk op de groene knop.
+// Staat het veld leeg, dan bel je wie er nu open staat. De rode knop hangt op.
+function setupDialbar() {
+  const input = $('#dial-input');
+  const call = () => {
+    const q = input.value.trim().toLowerCase();
+    let c = null;
+    if (q) c = [...S.contacts.values()].find((x) => x.state === 'ok' && (x.username === q || x.display_name.toLowerCase() === q))
+      || [...S.contacts.values()].find((x) => x.state === 'ok' && x.display_name.toLowerCase().includes(q));
+    else if (typeof S.cur === 'number') {
+      const conv = S.convs.get(S.cur);
+      if (conv?.kind === 'direct') c = S.contacts.get(otherId(conv));
+      else if (conv && !conv.left) return GroupCall.start(conv.id, false);
+    }
+    if (!c) return toastError(q ? `Geen contactpersoon gevonden voor "${input.value.trim()}".` : 'Typ eerst een naam of kies een contactpersoon.');
+    input.value = '';
+    Call.start(c.id, false);
+  };
+  $('#dial-call').onclick = call;
+  input.onkeydown = (e) => { if (e.key === 'Enter') call(); };
+  $('#dial-hang').onclick = () => {
+    if (Call.active || Call.incoming) Call.hangup();
+    else if (GroupCall.active) GroupCall.hangup();
+  };
+}
+
+// Onderdelen die alleen in bepaalde versies te zien zijn: titel van de telefoonkop, tabbladen,
+// statusbalk en de namenlijst van de adresbalk.
+const MOBILE_TITLES = {
+  i2009: { contacts: 'Alle contacten', recent: 'Chats', calls: 'Bellen' },
+  i2010: { contacts: 'Alle contacten', recent: 'Chats', calls: 'Bellen' },
+  i2011: { contacts: 'Alle contacten', recent: 'Chats', calls: 'Bellen' },
+  i2012: { contacts: 'Online contacten', recent: 'Berichten', calls: 'Bellen' },
+  i2013: { contacts: 'Online contacten', recent: 'Recent', calls: 'Bellen' },
+  a2010: { contacts: 'Alle contacten', recent: 'Recent', calls: 'Bellen' },
+  m2021: { contacts: 'Contacten', recent: 'Chats', calls: 'Gesprekken' }
+};
+const MOBILE_NAV = {
+  i2009: { recent: 'Chats', contacts: 'Contacten', calls: 'Bellen', more: 'Mijn info' },
+  i2010: { recent: 'Chats', contacts: 'Contacten', calls: 'Bellen', more: 'Mijn info' },
+  i2011: { recent: 'Chats', contacts: 'Contacten', calls: 'Bellen', more: 'Mijn info' },
+  i2012: { recent: 'Berichten', contacts: 'Contacten', calls: 'Bellen', more: 'Mijn info' },
+  i2013: { recent: 'Recent', contacts: 'Personen', calls: 'Bellen', more: 'Profiel' },
+  m2021: { recent: 'Chats', contacts: 'Contacten', calls: 'Gesprekken', more: 'Meer' }
+};
+const MOBILE_TABS = {
+  a2013: { recent: 'Recent', contacts: 'Personen' },
+  a2014: { recent: 'Recent', contacts: 'Personen' },
+  a2010: { recent: 'Recent', contacts: 'Alle contacten', calls: 'Bellen' }
+};
+
+function renderChrome() {
+  if (!S.me) return;
+  const mt = S.opts.mtheme || '';
+  const active = navActive();
+  let unread = 0;
+  for (const c of S.convs.values()) if (!c.left) unread += c.unread || 0;
+  const tabs = { recent: 'Recent', contacts: 'Contacten', calls: 'Bellen', ...MOBILE_TABS[mt] };
+  for (const b of document.querySelectorAll('#mtabs [data-nav]')) {
+    b.classList.toggle('on', b.dataset.nav === active);
+    b.querySelector('.mt-lbl').textContent = tabs[b.dataset.nav];
+  }
+  $('#mtabs .mt-count').textContent = unread ? String(unread) : '';
+  $('#mh-title').textContent = (MOBILE_TITLES[mt] || {})[active] || '';
+  const labels = { recent: 'Chats', contacts: 'Contacten', calls: 'Bellen', more: 'Meer', ...MOBILE_NAV[mt] };
+  for (const b of document.querySelectorAll('#mnav-pill [data-nav]')) b.querySelector('span:not(.mi-svg)').textContent = labels[b.dataset.nav];
+  const me = $('#mh-me');
+  me.className = `avatar mh-me ${S.me.avatar ? '' : 'none'}`;
+  me.style.backgroundImage = S.me.avatar ? `url("/api/media/${encodeURIComponent(S.me.avatar)}")` : '';
+  // Statusbalk: je eigen status en hoeveel contactpersonen er online zijn.
+  const p = myPresence();
+  $('#sb-st').className = `st ${p === 'offline' ? 'offline' : S.me.presence_pref === 'invisible' ? 'invisible' : p}`;
+  $('#sb-status').textContent = PRESENCE_LABEL[S.me.presence_pref === 'invisible' ? 'invisible' : p] || '';
+  const online = [...S.contacts.values()].filter((c) => c.state === 'ok' && c.presence !== 'offline').length;
+  $('#sb-count').textContent = `${online} ${online === 1 ? 'contactpersoon' : 'contactpersonen'} online`;
+  const names = [...S.contacts.values()].filter((c) => c.state === 'ok').map((c) => c.display_name).sort().join('\n');
+  if ($('#dial-names').dataset.names !== names) {
+    $('#dial-names').dataset.names = names;
+    $('#dial-names').replaceChildren(...names.split('\n').filter(Boolean).map((n) => h('option', { value: n })));
+  }
 }
 
 function markAllRead() {
@@ -5749,6 +5884,7 @@ function setupSide() {
 document.addEventListener('visibilitychange', () => {
   // Terug in de app: is de verbinding weggevallen, dan meteen opnieuw (niet wachten op de volgende poging).
   if (document.visibilityState === 'visible' && S.me && (!S.ws || S.ws.readyState > 1)) {
+    Live.sleeping = false;
     clearTimeout(Live.retry);
     Live.delay = 1000;
     Live.connect();

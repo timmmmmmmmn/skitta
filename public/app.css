@@ -547,6 +547,9 @@ body:has(#incoming) .toasts { bottom: 190px; }
 mark { background: #ffe25c; color: inherit; border-radius: 2px; }
 .theme-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 
+/* Onderdelen die alleen in bepaalde versies bestaan (themes.css en mobile-themes.css zetten ze aan). */
+.mhead, .mtabs, .toolbar, .dialbar, .statusbar, .msg-av { display: none; }
+
 /* ---------- Zwevende navigatie (telefoon) ---------- */
 .mnav { display: none; }
 @media (max-width: 720px) {

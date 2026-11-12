@@ -8,6 +8,16 @@ import { pushTo } from './push.js';
 
 const tag = (uid) => `u${uid}`;
 
+// De achtergrondverbinding van de Android-app maakt alleen meldingen. Al het andere verkeer (online-status,
+// typen, ICE-kandidaten tijdens bellen) zou de telefoon steeds wakker maken voor niets.
+const BACKGROUND = 'android-achtergrond';
+const BG_EVENTS = new Set(['msg', 'contacts', 'conv', 'read', 'kick']);
+const BG_CALL = new Set(['ring', 'cancel', 'taken', 'hangup', 'end']);
+function forBackground(event) {
+  if (event.t === 'call' || event.t === 'gcall') return BG_CALL.has(event.d?.type);
+  return BG_EVENTS.has(event.t);
+}
+
 // Wat anderen van iemand zien. Onzichtbaar = offline voor anderen.
 export function effectivePresence(pref, conns, idle) {
   if (!conns || pref === 'invisible') return 'offline';
@@ -44,12 +54,14 @@ export class Hub extends DurableObject {
 
   send(uids, event, opts = {}) {
     const data = JSON.stringify(event);
+    const bg = forBackground(event);
     let n = 0;
     for (const uid of new Set(uids)) {
       for (const ws of this.sockets(uid)) {
         const a = ws.deserializeAttachment() || {};
         if (opts.dev && a.dev !== opts.dev) continue;
         if (opts.notDev && a.dev === opts.notDev) continue;
+        if (a.dev === BACKGROUND && !bg) continue;
         try {
           ws.send(data);
           n++;

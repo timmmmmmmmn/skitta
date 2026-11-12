@@ -72,12 +72,36 @@
     <nav class="menubar" id="menubar"></nav>
     <div class="main">
       <aside class="side">
+        <!-- Kop van de oude telefoonapps (alleen in de telefoonversies) -->
+        <div class="mhead" id="mhead">
+          <button class="mh-btn mh-left" id="mh-left" data-nav="more"><span class="mi-svg" data-icon="menu"></span><span class="mh-lbl"></span></button>
+          <span class="mh-logo"><img src="/img/favicon.png" alt="">skitta</span>
+          <b class="mh-title" id="mh-title"></b>
+          <button class="mh-btn mh-search" id="mh-search" title="Zoeken"><span class="mi-svg" data-icon="search"></span></button>
+          <button class="mh-btn mh-add" data-nav="add" title="Toevoegen"><span class="mi-svg" data-icon="plus"></span></button>
+          <button class="mh-btn mh-more" data-nav="more" title="Meer"><span class="mi-svg" data-icon="more"></span></button>
+          <button class="avatar mh-me" id="mh-me" title="Profiel"></button>
+        </div>
+        <div class="mtabs" id="mtabs">
+          <button data-nav="recent"><span class="mi-svg" data-icon="clock"></span><span class="mt-lbl">Recent</span><b class="mt-count"></b></button>
+          <button data-nav="contacts"><span class="mi-svg" data-icon="user"></span><span class="mt-lbl">Contacten</span></button>
+          <button data-nav="calls"><span class="mi-svg" data-icon="phone"></span><span class="mt-lbl">Bellen</span></button>
+        </div>
         <div class="me">
           <button class="avatar me-avatar" id="me-avatar" title="Profiel bewerken"></button>
           <div class="me-info">
             <button class="me-status" id="me-status"><span class="st" id="me-st"></span><span id="me-name"></span><span class="caret"></span></button>
             <input class="me-mood" id="me-mood" placeholder="Vertel je contactpersonen wat je aan het doen bent" maxlength="200">
           </div>
+        </div>
+        <!-- Werkbalk van de oude computerversies -->
+        <div class="toolbar" id="toolbar">
+          <button data-act="home" title="Skitta Home"><span class="mi-svg" data-icon="home"></span><span>Home</span></button>
+          <button data-act="add" title="Contactpersoon toevoegen"><span class="mi-svg" data-icon="adduser"></span><span>Toevoegen</span></button>
+          <button data-act="search" title="Zoeken"><span class="mi-svg" data-icon="search"></span><span>Zoeken</span></button>
+          <button data-act="group" title="Groep maken"><span class="mi-svg" data-icon="people"></span><span>Vergadering</span></button>
+          <button data-act="chat" title="Chatten"><span class="mi-svg" data-icon="chat"></span><span>Chat</span></button>
+          <button data-act="calls" title="Bellen"><span class="mi-svg" data-icon="dialpad"></span><span>Bellen</span></button>
         </div>
         <button class="home-link" id="home-link"><img src="/img/favicon.png" alt=""> Skitta Home</button>
         <div class="search"><input id="search" type="search" placeholder="Zoeken" autocomplete="off"></div>
@@ -86,10 +110,21 @@
           <button role="tab" id="tab-recent">Recent <span class="tab-count" id="recent-count"></span></button>
         </div>
         <div class="list" id="list"></div>
+        <!-- Adresbalk met de groene en rode knop (1.0 – 3.0, Mac 2) -->
+        <div class="dialbar" id="dialbar">
+          <input id="dial-input" list="dial-names" placeholder="Typ een Skittanaam en druk op de groene knop" autocomplete="off">
+          <datalist id="dial-names"></datalist>
+          <div class="dial-btns">
+            <button class="dial-call" id="dial-call" title="Bellen"><span class="mi-svg" data-icon="phone"></span></button>
+            <button class="dial-hang" id="dial-hang" title="Ophangen"><span class="mi-svg" data-icon="hangup"></span></button>
+          </div>
+        </div>
         <div class="side-foot">
           <button id="add-contact-btn" title="Contactpersoon toevoegen"><span class="ico ico-add"></span>Contact</button>
           <button id="new-group-btn" title="Groep maken"><span class="ico ico-group"></span>Groep maken</button>
         </div>
+        <!-- Statusbalk onderaan (1.0 – 3.0, Mac 2) -->
+        <div class="statusbar" id="statusbar"><span class="st" id="sb-st"></span><span id="sb-status"></span><span class="sb-count" id="sb-count"></span></div>
       </aside>
       <div class="splitter" id="splitter"></div>
       <section class="pane" id="pane"></section>

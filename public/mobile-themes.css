@@ -1,167 +1,400 @@
-/* Thema's voor de telefoon, gebaseerd op de mobiele apps door de jaren heen (alleen ≤ 720 px).
-   Standaard (geen data-mtheme) is de huidige stijl. 2021 is donker; de andere zijn licht. */
+/* Telefoonversies, elk met de indeling van de mobiele app van toen (alleen ≤ 720 px). Referenties: de
+   schermafbeeldingen in "skitta project/mobile_interfaces". Standaard (geen data-mtheme) is de huidige
+   stijl met de zwevende glazen balk en blijft zoals hij is. 2021 is donker; de andere zijn licht.
+
+   a2010  Android 2010   blauwe balk met logo, grijze filterstrook, vierkante foto's met lijstje, geen tabbalk
+   a2013  Android 2013   witte kop met logo en je foto, tabbladen Recent/Favorieten/Personen, blauwe balk onderin,
+                         berichten als rijen (die van de ander lichtblauw)
+   a2014  Android 2014   als 2013, maar je eigen berichten lichtblauw
+   a2015  Android 2015   Material: blauwe balk met icoon-tabbladen, ronde foto's, zwevende plusknop
+   i2009  iPhone 2009    glanzend blauwe navigatiebalk, zwarte tabbalk met 5 → 4 tabs
+   i2010  iPhone 2010    idem, berichten als lichtblauwe kaartjes met foto ernaast
+   i2011  iPhone 2011    idem
+   i2012  iPhone 2012    witte wolkjes op grijs, tabbalk Contacten/Berichten/Bellen/Mijn info
+   i2013  iPhone 2013    iOS 7: plat blauw, witte tabbalk Personen/Recent/Bellen/Profiel
+   m2021  2021           donker, je foto bovenin het midden, tabbalk Chats/Gesprekken/Contacten/Meer */
 
 @media (max-width: 720px) {
 
-/* ---------- Gedeelde bouwstenen ---------- */
+/* ============================================================
+   Gedeelde bouwstenen
+   ============================================================ */
+
 html[data-mtheme] .me-status, html[data-mtheme] .conv-head h1 { text-shadow: none; }
 
-/* Glanzende blauwe balk (Android 2010, iPhone 2009–2012) */
-html[data-mtheme="a2010"] .me, html[data-mtheme="a2010"] .conv-head,
-html[data-mtheme="i2009"] .me, html[data-mtheme="i2009"] .conv-head,
-html[data-mtheme="i2010"] .me, html[data-mtheme="i2010"] .conv-head,
-html[data-mtheme="i2011"] .me, html[data-mtheme="i2011"] .conv-head,
-html[data-mtheme="i2012"] .me, html[data-mtheme="i2012"] .conv-head {
-  color: #fff; border-bottom: 1px solid #1d4a87;
-  background: linear-gradient(#8bb2e0, #4f82c4 50%, #3d70b6 51%, #3263a8) !important;
-  -webkit-backdrop-filter: none; backdrop-filter: none;
+/* Geen glas in de oude versies: gewone menu's en onderbladen */
+html[data-mtheme] :is(.menu, .sheet, .emo-pop, .dialog) {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  background: #fff !important; border: 1px solid #d5d9dd !important; box-shadow: 0 6px 24px rgba(0, 0, 0, .25) !important;
 }
-html[data-mtheme="a2010"] .me-status, html[data-mtheme="i2009"] .me-status, html[data-mtheme="i2010"] .me-status,
-html[data-mtheme="i2011"] .me-status, html[data-mtheme="i2012"] .me-status,
-html[data-mtheme="a2010"] .conv-head h1, html[data-mtheme="i2009"] .conv-head h1, html[data-mtheme="i2010"] .conv-head h1,
-html[data-mtheme="i2011"] .conv-head h1, html[data-mtheme="i2012"] .conv-head h1 { color: #fff; text-shadow: 0 -1px 0 rgba(0, 0, 0, .35); }
-html[data-mtheme="a2010"] .conv-head .sub2, html[data-mtheme="i2009"] .conv-head .sub2, html[data-mtheme="i2010"] .conv-head .sub2,
-html[data-mtheme="i2011"] .conv-head .sub2, html[data-mtheme="i2012"] .conv-head .sub2 { color: #dce9f8; }
-html[data-mtheme="a2010"] .conv-head .sbtn, html[data-mtheme="i2009"] .conv-head .sbtn, html[data-mtheme="i2010"] .conv-head .sbtn,
-html[data-mtheme="i2011"] .conv-head .sbtn, html[data-mtheme="i2012"] .conv-head .sbtn,
-html[data-mtheme="a2010"] .conv-head .back svg, html[data-mtheme="i2009"] .conv-head .back svg, html[data-mtheme="i2010"] .conv-head .back svg,
-html[data-mtheme="i2011"] .conv-head .back svg, html[data-mtheme="i2012"] .conv-head .back svg,
-html[data-mtheme="a2010"] .more-btn svg, html[data-mtheme="i2009"] .more-btn svg, html[data-mtheme="i2010"] .more-btn svg,
-html[data-mtheme="i2011"] .more-btn svg, html[data-mtheme="i2012"] .more-btn svg { color: #fff; fill: #fff; }
-html[data-mtheme="a2010"] .caret, html[data-mtheme="i2009"] .caret, html[data-mtheme="i2010"] .caret,
-html[data-mtheme="i2011"] .caret, html[data-mtheme="i2012"] .caret { border-top-color: #fff; }
+html[data-mtheme] .menu { animation: none; border-radius: 6px; }
+html[data-mtheme] .menu .mi { border-radius: 3px; }
+html[data-mtheme] :is(.sheet, .dialog) { animation: up .2s ease-out; }
 
-/* Vierkante foto's met lijstje (oude versies) */
-html[data-mtheme="a2010"] .list-av, html[data-mtheme="i2009"] .list-av, html[data-mtheme="i2010"] .list-av,
-html[data-mtheme="i2011"] .list-av, html[data-mtheme="i2012"] .list-av,
-html[data-mtheme="a2010"] .avatar, html[data-mtheme="i2009"] .avatar, html[data-mtheme="i2010"] .avatar,
-html[data-mtheme="i2011"] .avatar, html[data-mtheme="i2012"] .avatar { border-radius: 3px !important; }
-html[data-mtheme="a2010"] .list-av, html[data-mtheme="i2009"] .list-av, html[data-mtheme="i2010"] .list-av,
-html[data-mtheme="i2011"] .list-av, html[data-mtheme="i2012"] .list-av { width: 56px; height: 56px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
-/* Grote groene statusvinkjes naast de naam in plaats van op de foto */
-html[data-mtheme="a2010"] .row > .st, html[data-mtheme="i2009"] .row > .st, html[data-mtheme="i2010"] .row > .st,
-html[data-mtheme="i2011"] .row > .st, html[data-mtheme="i2012"] .row > .st { display: inline-block; width: 22px; height: 22px; background-size: 22px; }
-html[data-mtheme="a2010"] .list-av .st, html[data-mtheme="i2009"] .list-av .st, html[data-mtheme="i2010"] .list-av .st,
-html[data-mtheme="i2011"] .list-av .st, html[data-mtheme="i2012"] .list-av .st { display: none; }
-html[data-mtheme="a2010"] .row, html[data-mtheme="i2009"] .row, html[data-mtheme="i2010"] .row,
-html[data-mtheme="i2011"] .row, html[data-mtheme="i2012"] .row { border-bottom: 1px solid #e2e2e2 !important; padding: 6px 12px; }
-html[data-mtheme="a2010"] .row .name, html[data-mtheme="i2009"] .row .name, html[data-mtheme="i2010"] .row .name,
-html[data-mtheme="i2011"] .row .name, html[data-mtheme="i2012"] .row .name { font-size: 18px; font-weight: 700; }
+/* Kop met blur van de standaardstijl: hier gewoon effen */
+html.app-mode[data-mtheme] .conv-head { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
-/* Zwarte glanzende tabbalk (iPhone 2009–2012) */
-html[data-mtheme="i2009"] .mnav-pill, html[data-mtheme="i2010"] .mnav-pill,
-html[data-mtheme="i2011"] .mnav-pill, html[data-mtheme="i2012"] .mnav-pill {
-  background: linear-gradient(#4a4a4a, #1c1c1c 50%, #0a0a0a 51%, #000); border-color: #000; border-radius: 10px;
+/* De kop van de lijst (logo, titel, knoppen) */
+html[data-mtheme] .mhead {
+  display: flex; align-items: center; gap: 2px; flex: none; position: relative; z-index: 6;
+  min-height: calc(48px + var(--sat, 0px)); padding: var(--sat, 0px) 6px 0;
 }
-html[data-mtheme="i2009"] .mnav-pill button, html[data-mtheme="i2010"] .mnav-pill button,
-html[data-mtheme="i2011"] .mnav-pill button, html[data-mtheme="i2012"] .mnav-pill button { color: #9a9a9a; border-radius: 6px; }
-html[data-mtheme="i2009"] .mnav-pill button.on, html[data-mtheme="i2010"] .mnav-pill button.on,
-html[data-mtheme="i2011"] .mnav-pill button.on, html[data-mtheme="i2012"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .14); }
-html[data-mtheme="i2009"] .mnav-pill button.on svg, html[data-mtheme="i2010"] .mnav-pill button.on svg,
-html[data-mtheme="i2011"] .mnav-pill button.on svg, html[data-mtheme="i2012"] .mnav-pill button.on svg { fill: #39a8ff; }
-html[data-mtheme="i2009"] .mnav-add, html[data-mtheme="i2010"] .mnav-add,
-html[data-mtheme="i2011"] .mnav-add, html[data-mtheme="i2012"] .mnav-add { border-radius: 10px; background: linear-gradient(#8bb2e0, #3d70b6 51%, #3263a8); border-color: #1d4a87; }
-html[data-mtheme="i2009"] .search input, html[data-mtheme="i2010"] .search input,
-html[data-mtheme="i2011"] .search input, html[data-mtheme="i2012"] .search input,
-html[data-mtheme="a2010"] .search input { background-color: #fff; border: 1px solid #b7c3cf; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15); }
-html[data-mtheme="i2009"] .search, html[data-mtheme="i2010"] .search,
-html[data-mtheme="i2011"] .search, html[data-mtheme="i2012"] .search { background: linear-gradient(#d4dbe3, #b7c3cf); padding-top: 8px; }
+html.app-mode[data-mtheme] .mhead { position: sticky; top: 0; }
+html[data-mtheme] .mhead > * { display: none; }
+html[data-mtheme] .mh-btn { align-items: center; justify-content: center; min-width: 40px; height: 40px; border: 0; background: none; color: inherit; padding: 0 6px; gap: 4px; }
+html[data-mtheme] .mh-btn svg { width: 22px; height: 22px; fill: currentColor; }
+html[data-mtheme] .mh-title { flex: 1; min-width: 0; text-align: center; font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-mtheme] .mh-logo { align-items: center; gap: 6px; font: italic 900 25px/1 "Arial Rounded MT Bold", "Helvetica Rounded", "Varela Round", Arial, sans-serif; letter-spacing: -.5px; }
+html[data-mtheme] .mh-logo img { width: 26px; height: 26px; }
+html[data-mtheme] .mh-me { width: 36px; height: 36px; border-radius: 50%; border: 0; box-shadow: none; margin-left: auto; }
+html[data-mtheme] .me { display: none; }
 
-/* ---------- Android 2010 ---------- */
-html[data-mtheme="a2010"] .app, html[data-mtheme="a2010"] .side, html[data-mtheme="a2010"] .list { background: #fff; }
-html[data-mtheme="a2010"] .search { background: #f3f3f3; padding-top: 8px; }
-html[data-mtheme="a2010"] .chat { background: #fff; }
-html[data-mtheme="a2010"] .msg .text { background: #f1f1f1; border-radius: 4px !important; }
-html[data-mtheme="a2010"] .msg.mine .text { background: #d9ecfb; color: #1b1b1b; }
-html[data-mtheme="a2010"] .msg.mine .meta, html[data-mtheme="a2010"] .msg.mine .meta .ticks { color: #607a8c; }
-html[data-mtheme="a2010"] .mnav-pill { border-radius: 6px; background: linear-gradient(#5d9ff0, #2a7de1); border-color: #1d64c8; }
-html[data-mtheme="a2010"] .mnav-pill button { color: #dbe9fb; border-radius: 4px; }
-html[data-mtheme="a2010"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .2); }
-html[data-mtheme="a2010"] .mnav-add { border-radius: 6px; }
+/* Tabbladen bovenin (Android 2010–2015) */
+html[data-mtheme] .mtabs { flex: none; position: relative; z-index: 5; }
+html[data-mtheme] .mtabs button { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; height: 46px; border: 0; background: none; color: inherit; font-size: 16px; }
+html[data-mtheme] .mtabs .mi-svg { display: none; }
+html[data-mtheme] .mtabs svg { width: 24px; height: 24px; fill: currentColor; }
+html[data-mtheme] .mt-count:empty { display: none; }
+html[data-mtheme] .mt-count { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #f08a00; color: #fff; font-size: 12px; line-height: 20px; }
+html.app-mode[data-mtheme] .mtabs { position: sticky; top: calc(48px + var(--sat, 0px)); }
 
-/* ---------- Android 2013 / 2014: witte kop, blauwe titels, berichten als rijen ---------- */
-html[data-mtheme="a2013"], html[data-mtheme="a2014"] { --m-blue: #00aff0; }
-html[data-mtheme="a2013"] .me, html[data-mtheme="a2014"] .me { background: linear-gradient(110deg, #fff 55%, #d8f1fc 55%, #bfe8fa) !important; }
-html[data-mtheme="a2013"] .me-status, html[data-mtheme="a2014"] .me-status { color: #00aff0; }
-html[data-mtheme="a2013"] .conv-head h1, html[data-mtheme="a2014"] .conv-head h1 { color: #00aff0; font-size: 18px; }
-html[data-mtheme="a2014"] .conv-head .who { text-align: center; }
-html[data-mtheme="a2013"] .conv-head .sbtn, html[data-mtheme="a2014"] .conv-head .sbtn,
-html[data-mtheme="a2013"] .conv-head .back svg, html[data-mtheme="a2014"] .conv-head .back svg { color: #00aff0; fill: #00aff0; }
-html[data-mtheme="a2013"] .row.unread .name, html[data-mtheme="a2014"] .row.unread .name { color: #f08a00; }
-html[data-mtheme="a2013"] .row .badge, html[data-mtheme="a2014"] .row .badge { background: #f08a00; }
-html[data-mtheme="a2013"] .msg, html[data-mtheme="a2014"] .msg { align-items: stretch !important; padding: 0; }
-html[data-mtheme="a2013"] .msg .text, html[data-mtheme="a2014"] .msg .text {
-  max-width: none; border-radius: 0 !important; background: #fff; color: #1b1b1b; padding: 8px 16px;
+/* Zoekveld alleen op verzoek (vergrootglas in de kop) */
+html[data-mtheme]:is([data-mtheme="a2010"], [data-mtheme="a2013"], [data-mtheme="a2014"], [data-mtheme="a2015"]) .side:not(.searching) .search { display: none; }
+
+/* Vaste tabbalk onderin, over de hele breedte */
+html[data-mtheme] .mnav { left: 0; right: 0; bottom: 0; gap: 0; padding-bottom: var(--sab, env(safe-area-inset-bottom)); }
+html[data-mtheme] .mnav-pill { height: 52px; border-radius: 0 !important; border: 0; box-shadow: none; padding: 0; background: none; }
+html[data-mtheme] .mnav-pill button { margin: 0; border-radius: 0; font-size: 10.5px; }
+html[data-mtheme] .mnav-add { display: none; }
+html[data-mtheme] :is(.list, .home) { padding-bottom: calc(64px + var(--sab, env(safe-area-inset-bottom))); }
+/* In de app: geen glas eroverheen, dus de balk zelf laten zien */
+html.native[data-mtheme] :is(.mnav-pill, .mnav-add), html.glisse[data-mtheme] :is(.mnav-pill, .mnav-add) { opacity: 1; }
+
+/* Berichten als rijen of kaartjes: foto, naam en tijd bovenaan, tekst eronder */
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"], [data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="a2015"]) .msg-av { display: block; }
+html[data-mtheme] .msg-av.none-av { visibility: hidden; }
+
+/* ============================================================
+   iPhone 2009–2012: glanzend blauwe balk, zwarte tabbalk
+   ============================================================ */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) {
+  --m-blue: #3d70b6; --i-bar: linear-gradient(#8bb2e0, #5a8ccc 50%, #3d70b6 51%, #3263a8);
+  --i-btn: linear-gradient(#7aa3d9, #4a7bbf 50%, #3263a8 51%, #2c5b9f);
 }
-html[data-mtheme="a2013"] .msg:not(.mine) .text, html[data-mtheme="a2014"] .msg:not(.mine) .text { background: #e5f5fd; }
-html[data-mtheme="a2013"] .msg.mine .meta, html[data-mtheme="a2014"] .msg.mine .meta,
-html[data-mtheme="a2013"] .msg.mine .meta .ticks, html[data-mtheme="a2014"] .msg.mine .meta .ticks { color: #8aa0ad; }
-html[data-mtheme="a2013"] .msg.first .from, html[data-mtheme="a2014"] .msg.first .from { display: block !important; text-align: left; padding: 6px 16px 0; color: #00aff0; font-size: 12.5px; font-weight: 600; }
-html[data-mtheme="a2013"] .msg.first.mine .from, html[data-mtheme="a2014"] .msg.first.mine .from { background: #fff; }
-html[data-mtheme="a2013"] .msg.first:not(.mine) .from, html[data-mtheme="a2014"] .msg.first:not(.mine) .from { background: #e5f5fd; }
-html[data-mtheme="a2013"] .mnav-pill, html[data-mtheme="a2014"] .mnav-pill { background: #1ba1e2; border-color: #1590cc; border-radius: 4px; }
-html[data-mtheme="a2013"] .mnav-pill button, html[data-mtheme="a2014"] .mnav-pill button { color: #d4efff; border-radius: 2px; }
-html[data-mtheme="a2013"] .mnav-pill button.on, html[data-mtheme="a2014"] .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .18); }
-html[data-mtheme="a2013"] .mnav-add, html[data-mtheme="a2014"] .mnav-add { border-radius: 4px; }
-html[data-mtheme="a2013"] .m-send, html[data-mtheme="a2014"] .m-send { background: #00aff0; }
-
-/* ---------- Android 2015: Material ---------- */
-html[data-mtheme="a2015"] { --m-blue: #00aff0; --m-bubble: #c7edfc; --m-other: #eef0f2; }
-html[data-mtheme="a2015"] .me { background: #00aff0 !important; color: #fff; }
-html[data-mtheme="a2015"] .me-status { color: #fff; }
-html[data-mtheme="a2015"] .caret { border-top-color: #fff; }
-html[data-mtheme="a2015"] .search { background: #00aff0; padding-bottom: 12px; }
-html[data-mtheme="a2015"] .search input { background-color: rgba(255, 255, 255, .95); }
-html[data-mtheme="a2015"] .conv-head { background: #fff !important; }
-html[data-mtheme="a2015"] .conv-head h1 { color: #00aff0; font-size: 17px; }
-html[data-mtheme="a2015"] .conv-head .sbtn, html[data-mtheme="a2015"] .conv-head .back svg { color: #00aff0; fill: #00aff0; }
-html[data-mtheme="a2015"] .msg .text { border-radius: 4px !important; }
-html[data-mtheme="a2015"] .msg.mine .text { color: #1b1b1b; }
-html[data-mtheme="a2015"] .msg.mine .meta, html[data-mtheme="a2015"] .msg.mine .meta .ticks { color: #4b7c93; }
-html[data-mtheme="a2015"] .mnav-pill { border-radius: 4px; }
-html[data-mtheme="a2015"] .mnav-add { background: #00aff0; border: 0; box-shadow: 0 4px 10px rgba(0, 0, 0, .3); }
-
-/* ---------- iPhone 2010 / 2011: berichten als lichtblauwe kaartjes ---------- */
-html[data-mtheme="i2010"] .chat, html[data-mtheme="i2011"] .chat, html[data-mtheme="i2009"] .chat { background: #f2f2f2; }
-html[data-mtheme="i2009"] .msg .text, html[data-mtheme="i2010"] .msg .text, html[data-mtheme="i2011"] .msg .text {
-  background: linear-gradient(#e7f3fc, #cfe7f8); color: #1b1b1b; border: 1px solid #a9cbe6; border-radius: 6px !important;
+html[data-mtheme="i2012"] { --i-bar: linear-gradient(#6fa6e8, #3f86d8 50%, #2a74cd 51%, #2468bd); --i-btn: linear-gradient(#5d9be6, #2f77cf 51%, #2468bd); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mhead,
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head {
+  background: var(--i-bar) !important; color: #fff; border-bottom: 1px solid #1d4a87;
 }
-html[data-mtheme="i2009"] .msg.mine .text, html[data-mtheme="i2010"] .msg.mine .text, html[data-mtheme="i2011"] .msg.mine .text {
-  background: linear-gradient(#fff, #eef2f5); border-color: #c9d1d8; color: #1b1b1b;
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mh-title { display: block; font-weight: 700; font-size: 20px; text-shadow: 0 -1px 0 rgba(0, 0, 0, .4); padding-left: 52px; }
+/* Bordjesknoppen in de balk */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) :is(.mh-add, .conv-head .more-btn) {
+  display: flex; height: 30px; min-width: 40px; margin: 0 2px 0 6px; border: 1px solid #1d4a87 !important; border-radius: 5px; background: var(--i-btn) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 1px 0 rgba(255, 255, 255, .25);
 }
-html[data-mtheme="i2009"] .msg.mine .meta, html[data-mtheme="i2010"] .msg.mine .meta, html[data-mtheme="i2011"] .msg.mine .meta,
-html[data-mtheme="i2009"] .msg.mine .meta .ticks, html[data-mtheme="i2010"] .msg.mine .meta .ticks, html[data-mtheme="i2011"] .msg.mine .meta .ticks { color: #7d8a96; }
-html[data-mtheme="i2010"] .m-send, html[data-mtheme="i2011"] .m-send, html[data-mtheme="i2009"] .m-send { border-radius: 8px; background: linear-gradient(#8bb2e0, #3d70b6 51%, #3263a8); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .more-btn svg { width: 18px; height: 18px; fill: #fff; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .back {
+  width: auto; height: 30px; padding: 0 10px 0 14px; margin-left: 4px; border: 1px solid #1d4a87; color: #fff; font-size: 12px; font-weight: 700;
+  background: var(--i-btn); clip-path: polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%); border-radius: 0 5px 5px 0;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, .4);
+}
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .conv-head .back::after { content: "Chats"; }
+html[data-mtheme="i2012"] .conv-head .back::after { content: "Berichten"; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .back svg { display: none; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head :is(.avatar-btn, .sub2) { display: none; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .who { text-align: center; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head h1 { color: #fff; font-size: 19px; font-weight: 700; justify-content: center; text-shadow: 0 -1px 0 rgba(0, 0, 0, .4); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .sbtn { color: #fff; width: 34px; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .conv-head .sbtn.blue { display: none; }
+/* Zoekbalk */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"], [data-mtheme="i2013"]) .search { background: linear-gradient(#d4dbe3, #b7c3cf); padding: 7px 8px; border-bottom: 1px solid #9aa6b2; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .search input { height: 30px; border-radius: 15px; background-color: #fff; border: 1px solid #8f9ba7; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .2); }
+/* Lijst: vierkante foto tegen de rand, groen vinkje, vette naam */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) :is(.app, .side, .list) { background: #fff; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .row {
+  padding: 0 10px 0 0 !important; min-height: 64px; gap: 10px; border-bottom: 1px solid #d9d9d9 !important;
+}
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .list-av { width: 64px; height: 64px; border-radius: 0 !important; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"], [data-mtheme="a2010"]) .list-av .st { display: none; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"], [data-mtheme="a2010"]) .row > .st { display: inline-block; width: 24px; height: 24px; background-size: 24px; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .row .name { font-size: 19px; font-weight: 700; color: #000; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .row .mood { font-size: 15px; color: #8a8a8a; }
+/* Zwarte glanzende tabbalk: Contacten, Chats, Bellen, Mijn info */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav { background: linear-gradient(#3c3c3c, #1a1a1a 50%, #050505 51%, #000); border-top: 1px solid #000; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav-pill { padding: 2px 3px; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav-pill button { color: #999; margin: 2px; border-radius: 4px; font-weight: 700; font-size: 10px; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav-pill button.on { color: #fff; background: rgba(255, 255, 255, .15); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav-pill button svg { width: 26px; height: 26px; fill: #a6a6a6; filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, .6)); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .mnav-pill button.on svg { fill: #3aa0ff; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"], [data-mtheme="i2013"]) .mnav-pill [data-nav="contacts"] { order: -2; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"], [data-mtheme="i2013"]) .mnav-pill [data-nav="recent"] { order: -1; }
+/* Gesprek: kaartjes met naam en tijd, foto ernaast (2009–2011) */
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .chat { background: #e9ecef; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg {
+  display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-areas: "av text"; align-items: start; gap: 0 6px; padding: 2px 6px;
+}
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg.mine { grid-template-columns: minmax(0, 1fr) 54px; grid-template-areas: "text av"; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg-av { grid-area: av; width: 54px; height: 54px; border-radius: 2px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg-av.none-av { height: 0; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg .text {
+  grid-area: text; max-width: none; width: 100%; border-radius: 6px !important; padding: 4px 8px 6px; color: #000;
+  background: linear-gradient(#e2f1fc, #c6e2f7); border: 1px solid #9cc2e2; box-shadow: 0 1px 1px rgba(0, 0, 0, .1);
+}
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg.mine .text { background: linear-gradient(#fff, #edf0f3); border-color: #c4ccd3; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg.mine .text a { color: var(--link); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .msg.first .from:not(:empty) {
+  display: block !important; grid-area: text; z-index: 1; padding: 4px 8px 0; font-size: 12.5px; font-weight: 700; color: #3c4e5f; text-align: left;
+}
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg.first .text { padding-top: 22px; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .msg .meta { position: absolute; top: 4px; right: 8px; margin: 0; float: none; color: #6d7a86 !important; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .msg:not(.first) .meta { display: none; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .msg .meta .ticks { display: none; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"]) .msg:is(.sys, .call) { display: flex; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .compose { background: linear-gradient(#e0e4e8, #c9d0d6); border-top: 1px solid #a8b1b9; }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .m-field { background: #fff; border: 1px solid #9aa4ad; border-radius: 16px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15); }
+html:is([data-mtheme="i2009"], [data-mtheme="i2010"], [data-mtheme="i2011"], [data-mtheme="i2012"]) .m-send { width: auto; padding: 0 12px; border-radius: 8px; background: var(--i-btn); border: 1px solid #1d4a87; }
 
-/* ---------- iPhone 2012: witte wolkjes op grijs ---------- */
+/* iPhone 2012: witte wolkjes op grijs, zonder foto's */
 html[data-mtheme="i2012"] .chat { background: #e3e6ea; }
-html[data-mtheme="i2012"] .msg .text { background: #fff; color: #1b1b1b; border-radius: 4px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
-html[data-mtheme="i2012"] .msg.mine .text { background: #d4ecfa; }
-html[data-mtheme="i2012"] .msg.mine .meta, html[data-mtheme="i2012"] .msg.mine .meta .ticks { color: #6d8597; }
-html[data-mtheme="i2012"] .chat.group .msg.first .from { display: block !important; text-align: left; font-weight: 700; color: #1b1b1b; }
+html[data-mtheme="i2012"] .msg { align-items: stretch; padding: 3px 10px; }
+html[data-mtheme="i2012"] .msg .text {
+  max-width: none; border-radius: 4px !important; background: #fff; color: #000; padding: 6px 10px 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+html[data-mtheme="i2012"] .msg.mine .text { background: #d2ebfa; color: #000; }
+html[data-mtheme="i2012"] .msg.mine .text a { color: var(--link); }
+html[data-mtheme="i2012"] .msg.first .from:not(:empty) { position: relative; margin-bottom: -26px; padding: 6px 10px 0; color: #000; }
+html[data-mtheme="i2012"] .msg.first .text { padding-top: 26px; }
+html[data-mtheme="i2012"] .msg:not(.first) .text { border-radius: 0 0 4px 4px !important; margin-top: -4px; border-top: 1px solid #e3e6ea; }
+html[data-mtheme="i2012"] .mnav-pill button svg { fill: #888; }
+html[data-mtheme="i2012"] .mnav-pill button.on svg { fill: #4ab0ff; }
 
-/* ---------- iPhone 2013: iOS 7, plat ---------- */
-html[data-mtheme="i2013"] { --m-blue: #00aff0; --m-bubble: #d7f0fb; --m-other: #ececec; }
-html[data-mtheme="i2013"] .me, html[data-mtheme="i2013"] .conv-head { background: #00aff0 !important; color: #fff; }
-html[data-mtheme="i2013"] .me-status, html[data-mtheme="i2013"] .conv-head h1 { color: #fff; }
-html[data-mtheme="i2013"] .conv-head .sub2 { color: #d9f3fd; }
-html[data-mtheme="i2013"] .caret { border-top-color: #fff; }
-html[data-mtheme="i2013"] .conv-head .sbtn, html[data-mtheme="i2013"] .conv-head .back svg, html[data-mtheme="i2013"] .more-btn svg { color: #fff; fill: #fff; }
-html[data-mtheme="i2013"] .msg .text { border-radius: 10px !important; }
-html[data-mtheme="i2013"] .msg.mine .text { color: #1b1b1b; }
-html[data-mtheme="i2013"] .msg.mine .meta, html[data-mtheme="i2013"] .msg.mine .meta .ticks { color: #4f8aa5; }
-html[data-mtheme="i2013"] .chat.group .msg.first .from { display: block !important; text-align: left; color: #00aff0; }
-html[data-mtheme="i2013"] .mnav-pill { background: #f7f7f7; border-color: #d8d8d8; border-radius: 0; }
-html[data-mtheme="i2013"] .mnav-pill button { border-radius: 0; }
-html[data-mtheme="i2013"] .mnav-pill button.on { background: none; color: #00aff0; }
-html[data-mtheme="i2013"] .mnav-add { border-radius: 0; background: #7cc142; border-color: #6aae32; }
+/* ============================================================
+   iPhone 2013: iOS 7, plat blauw
+   ============================================================ */
+html[data-mtheme="i2013"] { --m-blue: #00aff0; --m-bubble: #d6effb; --m-other: #ececec; }
+html[data-mtheme="i2013"] body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+html[data-mtheme="i2013"] .mhead, html[data-mtheme="i2013"] .conv-head { background: #00aff0 !important; color: #fff; border: 0; }
+html[data-mtheme="i2013"] .mh-title { display: block; font-weight: 600; font-size: 18px; padding-left: 52px; }
+html[data-mtheme="i2013"] .mh-add { display: flex; }
+html[data-mtheme="i2013"] .conv-head :is(.avatar-btn, .sbtn.blue) { display: none; }
+html[data-mtheme="i2013"] .conv-head .who { text-align: center; }
+html[data-mtheme="i2013"] .conv-head h1 { color: #fff; justify-content: center; font-size: 17px; }
+html[data-mtheme="i2013"] .conv-head .sub2 { color: #e0f5fd; font-size: 11px; }
+html[data-mtheme="i2013"] .conv-head :is(.sbtn, .back svg, .more-btn svg) { color: #fff; fill: #fff; }
+html[data-mtheme="i2013"] .search { background: #c9cdd2; border: 0; }
+html[data-mtheme="i2013"] .search input { height: 30px; border-radius: 6px; background-color: #fff; border: 0; }
+html[data-mtheme="i2013"] :is(.app, .side, .list) { background: #fff; }
+html[data-mtheme="i2013"] .row { padding: 6px 12px !important; min-height: 70px; border-bottom: 1px solid #e3e3e3 !important; }
+html[data-mtheme="i2013"] .list-av { width: 54px; height: 54px; border-radius: 2px !important; }
+html[data-mtheme="i2013"] .list-av .st { display: none; }
+html[data-mtheme="i2013"] .row .name { font-size: 20px; font-weight: 300; color: #000; }
+html[data-mtheme="i2013"] .row .mood { font-size: 15px; color: #8a8a8a; }
+html[data-mtheme="i2013"] .row > .st { display: inline-block; order: 1; width: 18px; height: 18px; background-size: 18px; margin-left: auto; }
+html[data-mtheme="i2013"] .mnav { background: #f7f7f7; border-top: 1px solid #c8c8c8; }
+html[data-mtheme="i2013"] .mnav-pill button { color: #8e8e93; font-weight: 500; }
+html[data-mtheme="i2013"] .mnav-pill button.on { color: #00aff0; background: none; }
+html[data-mtheme="i2013"] .chat { background: #fff; }
+html[data-mtheme="i2013"] .msg { align-items: stretch; padding: 3px 10px; }
+html[data-mtheme="i2013"] .msg .text { max-width: none; border-radius: 6px !important; background: #d6effb; color: #000; padding: 6px 12px 9px; }
+html[data-mtheme="i2013"] .msg.mine .text { background: #ececec; color: #000; }
+html[data-mtheme="i2013"] .msg.mine .text a { color: var(--link); }
+html[data-mtheme="i2013"] .msg.first .from:not(:empty) { position: relative; z-index: 1; margin-bottom: -24px; padding: 6px 12px 0; color: #00a2df; font-weight: 600; display: block !important; text-align: left; }
+html[data-mtheme="i2013"] .chat:not(.group) .msg.first .from:not(:empty) { display: block !important; }
+html[data-mtheme="i2013"] .msg.first .text { padding-top: 26px; }
+html[data-mtheme="i2013"] .msg .meta { position: absolute; top: 6px; right: 12px; margin: 0; color: #a0a0a0 !important; }
+html[data-mtheme="i2013"] .msg:not(.first) .meta { display: none; }
+html[data-mtheme="i2013"] .msg .meta .ticks { display: none; }
+html[data-mtheme="i2013"] .compose { background: #f2f2f2; border-top: 1px solid #ddd; }
+html[data-mtheme="i2013"] .m-field { background: #fff; border-radius: 6px; border: 1px solid #ccc; }
+html[data-mtheme="i2013"] .m-send { border-radius: 6px; width: auto; padding: 0 12px; background: #b9b9b9; }
+html[data-mtheme="i2013"] .m-send:not(:disabled) { background: #00aff0; }
 
-/* ---------- 2021: donker ---------- */
-html[data-mtheme="m2021"] { --m-blue: #3a96dd; --m-bubble: #2b5e8c; --m-other: #2a2a2e; }
-html[data-mtheme="m2021"] .me { text-align: center; }
-html[data-mtheme="m2021"] .msg .text { border-radius: 14px !important; }
-html[data-mtheme="m2021"] .list-av { width: 48px; height: 48px; }
-html[data-mtheme="m2021"] .mnav-pill { background: #1f1f23 !important; border-color: #2c2c31 !important; }
-html[data-mtheme="m2021"] .mnav-pill button.on { background: #1d3a54 !important; color: #8fc8f5 !important; }
-html[data-mtheme="m2021"] .mnav-add { background: #3a96dd; border: 0; border-radius: 18px; }
+/* ============================================================
+   Android 2010
+   ============================================================ */
+html[data-mtheme="a2010"] { --m-blue: #2a7de1; }
+html[data-mtheme="a2010"] body { font-family: "Droid Sans", Roboto, Arial, sans-serif; }
+html[data-mtheme="a2010"] .mhead, html[data-mtheme="a2010"] .conv-head { background: linear-gradient(#64a8f4, #2f80e3) !important; color: #fff; border-bottom: 1px solid #1c64c2; }
+html[data-mtheme="a2010"] .mh-logo { display: flex; margin-left: 8px; margin-right: auto; text-shadow: 0 1px 1px rgba(0, 40, 100, .5); }
+html[data-mtheme="a2010"] :is(.mh-add, .mh-search, .mh-more) { display: flex; height: calc(48px); border-left: 1px solid rgba(255, 255, 255, .3); box-shadow: -1px 0 0 rgba(0, 60, 140, .3); }
+html[data-mtheme="a2010"] .mtabs { display: flex; background: linear-gradient(#fafafa, #ececec); border-bottom: 1px solid #d0d0d0; color: #666; }
+html[data-mtheme="a2010"] .mtabs button { font-size: 15px; }
+html[data-mtheme="a2010"] .mtabs button.on { color: #000; font-weight: 700; }
+html[data-mtheme="a2010"] .mtabs button.on::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: 0; height: 3px; background: #2f80e3; }
+html[data-mtheme="a2010"] .mnav { display: none !important; }
+html[data-mtheme="a2010"] :is(.list, .home) { padding-bottom: calc(10px + var(--sab, env(safe-area-inset-bottom))); }
+html[data-mtheme="a2010"] .search { background: #ececec; }
+html[data-mtheme="a2010"] .search input { background-color: #fff; border: 1px solid #b7c3cf; border-radius: 4px; }
+html[data-mtheme="a2010"] :is(.app, .side, .list) { background: #fff; }
+html[data-mtheme="a2010"] .row { padding: 6px 10px !important; min-height: 74px; gap: 12px; border-bottom: 1px solid #e2e2e2 !important; }
+html[data-mtheme="a2010"] .list-av { width: 60px; height: 60px; border-radius: 0 !important; border: 3px solid #fff; border-bottom-width: 9px; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+html[data-mtheme="a2010"] .row .name { font-size: 20px; color: #111; font-weight: 400; }
+html[data-mtheme="a2010"] .row .mood { font-size: 15px; color: #666; }
+html[data-mtheme="a2010"] .conv-head :is(h1, .sub2) { color: #fff; }
+html[data-mtheme="a2010"] .conv-head :is(.sbtn, .back svg, .more-btn svg) { color: #fff; fill: #fff; }
+html[data-mtheme="a2010"] .chat { background: #fff; }
+html[data-mtheme="a2010"] .msg .text { border-radius: 3px !important; background: #f1f1f1; color: #111; }
+html[data-mtheme="a2010"] .msg.mine .text { background: #d9ecfb; color: #111; }
+html[data-mtheme="a2010"] .msg.mine .text a { color: var(--link); }
+html[data-mtheme="a2010"] .msg.mine .meta, html[data-mtheme="a2010"] .msg.mine .meta .ticks { color: #607a8c; }
+html[data-mtheme="a2010"] .m-send { border-radius: 4px; }
+
+/* ============================================================
+   Android 2013 / 2014
+   ============================================================ */
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) { --m-blue: #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) body { font-family: Roboto, "Segoe UI", Arial, sans-serif; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mhead {
+  background: linear-gradient(162deg, transparent 52%, #c5ebfb 52%, #9fdcf7 70%, #d6f1fc 70%, transparent 86%), #fff; color: #00aff0;
+}
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mh-logo { display: flex; margin-left: 8px; color: #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mh-me { display: inline-block; margin-right: 6px; box-shadow: 0 0 0 2px #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mtabs { display: flex; background: #fff; color: #00aff0; border-bottom: 2px solid #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mtabs button { font-size: 17px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mtabs button.on { font-weight: 600; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mtabs [data-nav="calls"] { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mtabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 5px; background: #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) :is(.app, .side, .list) { background: #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row { padding: 8px 12px !important; min-height: 74px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .list-av { width: 52px; height: 52px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .list-av .st { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row .name { font-size: 21px; font-weight: 300; color: #222; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row.unread .name { color: #f08a00; font-weight: 400; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row .mood { font-size: 15px; color: #8a8a8a; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row .badge { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .row .when { color: #8a8a8a !important; font-weight: 400 !important; }
+/* Blauwe balk onderin: bellen, nieuw gesprek, menu */
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav { background: #1ba1e2; justify-content: space-around; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-pill { display: contents; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-pill :is([data-nav="recent"], [data-nav="contacts"]) { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) :is(.mnav-pill button, .mnav-add) {
+  display: flex; flex: 1; height: 52px; color: #fff; background: none !important; border: 0; box-shadow: none; border-radius: 0;
+}
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-add { order: 1; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-pill [data-nav="more"] { order: 2; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-pill button > span:not(.mi-svg) { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav svg { width: 26px; height: 26px; fill: #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .mnav-add .mi-svg svg { width: 30px; height: 30px; }
+/* Gesprek: witte kop met blauwe titel, berichten als rijen, knoppen in een blauwe balk onderin */
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head { background: #fff !important; border-bottom: 1px solid #b9e6f9; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .avatar-btn { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .who { text-align: center; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head h1 { color: #00aff0; font-size: 19px; justify-content: center; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head h1 .st { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #7cc142 !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head h1 .st:is(.offline, .invisible, .pending, .unknown) { background: #c3c8cc !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head h1 .st.away { background: #fcc61b !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head h1 .st.dnd { background: #ec4136 !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .sub2 { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .back svg { fill: #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .actions {
+  position: fixed; z-index: 7; left: 0; right: 0; bottom: 0; justify-content: space-around; background: #1ba1e2;
+  padding-bottom: var(--sab, env(safe-area-inset-bottom));
+}
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .actions :is(.sbtn, .sbtn.round, .more-btn) { display: inline-flex; flex: 1; height: 52px; border-radius: 0; color: #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .actions svg { width: 26px; height: 26px; fill: #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .conv-head .actions .btn { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .compose { padding-bottom: calc(60px + var(--sab, env(safe-area-inset-bottom))); border-top: 1px solid #b9e6f9; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .m-field { background: #fff; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .compose-box textarea::placeholder { color: #7fcdf0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .m-attach svg { fill: #fff; background: #00aff0; border-radius: 50%; padding: 3px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .m-send { background: #00aff0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .chat { background: #fff; padding-top: 0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; grid-template-areas: "av from time" "av text text"; gap: 0 12px;
+  align-items: start; padding: 6px 12px; margin: 0 !important; background: #fff;
+}
+html[data-mtheme="a2013"] .msg:not(.mine), html[data-mtheme="a2014"] .msg.mine { background: #e5f5fd; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg.first { padding-top: 12px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg-av { grid-area: av; width: 40px; height: 40px; border-radius: 50% !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg-av.none-av { height: 0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .chat .msg .from:not(:empty) { display: block !important; grid-area: from; text-align: left; color: #00aff0; font-size: 14px; font-weight: 600; padding: 0; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg .from:empty { display: none !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg > .time { display: block; grid-area: time; color: #8a8a8a; font-size: 12px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg:not(.first) > .time { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg .text { grid-area: text; max-width: none; padding: 0 0 2px; border-radius: 0 !important; background: none !important; color: #222 !important; font-size: 16px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg .text a { color: var(--link) !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg .meta { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg .time .ticks { display: none; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg:is(.sys, .call) { grid-template-areas: "text text text"; background: #fff !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg:is(.sys, .call) .text { text-align: center; color: #8a8a8a !important; font-size: 13px; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .msg:is(.sys, .call) :is(.msg-av, .time) { display: none !important; }
+html:is([data-mtheme="a2013"], [data-mtheme="a2014"]) .day { margin: 0; padding: 10px 0 6px; background: #fff; }
+
+/* ============================================================
+   Android 2015: Material
+   ============================================================ */
+html[data-mtheme="a2015"] { --m-blue: #00aff0; --m-bubble: #c7edfc; --m-other: #f1f2f4; }
+html[data-mtheme="a2015"] body { font-family: Roboto, "Segoe UI", Arial, sans-serif; }
+html[data-mtheme="a2015"] .mhead { background: #00aff0; color: #fff; }
+html[data-mtheme="a2015"] .mh-logo { display: flex; position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; }
+html[data-mtheme="a2015"] .mh-logo img { display: none; }
+html[data-mtheme="a2015"] .mh-me { display: inline-block; margin: 0 0 0 4px; width: 32px; height: 32px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .8); }
+html[data-mtheme="a2015"] :is(.mh-search, .mh-more) { display: flex; }
+html[data-mtheme="a2015"] .mh-search { margin-left: auto; }
+html[data-mtheme="a2015"] .mtabs { display: flex; background: #00aff0; color: rgba(255, 255, 255, .7); box-shadow: 0 2px 4px rgba(0, 0, 0, .2); }
+html[data-mtheme="a2015"] .mtabs .mi-svg { display: inline-flex; }
+html[data-mtheme="a2015"] .mtabs .mt-lbl { display: none; }
+html[data-mtheme="a2015"] .mtabs button.on { color: #fff; }
+html[data-mtheme="a2015"] .mtabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #fff; }
+html[data-mtheme="a2015"] .mt-count { position: absolute; top: 6px; left: calc(50% + 4px); min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; }
+html[data-mtheme="a2015"] .mnav { left: auto; right: 16px; bottom: calc(16px + var(--sab, env(safe-area-inset-bottom))); padding: 0; background: none; }
+html[data-mtheme="a2015"] .mnav-pill { display: none; }
+html[data-mtheme="a2015"] .mnav-add { display: flex; width: 56px; height: 56px; border: 0; background: #00aff0; box-shadow: 0 4px 10px rgba(0, 0, 0, .3); }
+html[data-mtheme="a2015"] :is(.app, .side, .list) { background: #fff; }
+html[data-mtheme="a2015"] .row { padding: 8px 16px !important; min-height: 66px; }
+html[data-mtheme="a2015"] .list-av { width: 42px; height: 42px; }
+html[data-mtheme="a2015"] .row .name { font-size: 15px; font-weight: 500; color: #222; }
+html[data-mtheme="a2015"] .row .mood { font-size: 13px; color: #9a9a9a; }
+html[data-mtheme="a2015"] .row .badge { background: #f08a00; min-width: 18px; height: 18px; line-height: 18px; border-radius: 9px; font-size: 11px; }
+html[data-mtheme="a2015"] .row .when { color: #9a9a9a !important; font-weight: 400 !important; font-size: 11px; }
+html[data-mtheme="a2015"] .conv-head { background: #00aff0 !important; color: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .2); border: 0; }
+html[data-mtheme="a2015"] .conv-head .avatar-btn, html[data-mtheme="a2015"] .conv-head .sub2 { display: none; }
+html[data-mtheme="a2015"] .conv-head h1 { color: #fff; font-size: 17px; font-weight: 500; }
+html[data-mtheme="a2015"] .conv-head h1 .st { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #7cc142 !important; }
+html[data-mtheme="a2015"] .conv-head h1 .st:is(.offline, .invisible, .pending, .unknown) { background: rgba(255, 255, 255, .5) !important; }
+html[data-mtheme="a2015"] .conv-head :is(.sbtn, .back svg, .more-btn svg) { color: #fff; fill: #fff; }
+html[data-mtheme="a2015"] .chat { background: #fff; }
+html[data-mtheme="a2015"] .msg { display: grid; grid-template-columns: 34px minmax(0, auto); grid-template-areas: "av text"; justify-content: start; gap: 0 8px; align-items: end; }
+html[data-mtheme="a2015"] .msg.mine { grid-template-columns: minmax(0, auto); grid-template-areas: "text"; justify-content: end; }
+html[data-mtheme="a2015"] .msg.mine .msg-av { display: none; }
+html[data-mtheme="a2015"] .msg-av { grid-area: av; width: 32px; height: 32px; border-radius: 50% !important; }
+html[data-mtheme="a2015"] .msg-av.none-av { height: 0; }
+html[data-mtheme="a2015"] .msg .text { grid-area: text; border-radius: 3px !important; max-width: min(78vw, 520px); background: #f1f2f4; color: #222; }
+html[data-mtheme="a2015"] .msg.mine .text { background: #c7edfc; color: #1b1b1b; }
+html[data-mtheme="a2015"] .msg.mine .text a { color: var(--link); }
+html[data-mtheme="a2015"] .msg.mine .meta, html[data-mtheme="a2015"] .msg.mine .meta .ticks { color: #4b7c93; }
+html[data-mtheme="a2015"] .msg:is(.sys, .call) { display: flex; }
+html[data-mtheme="a2015"] .msg:is(.sys, .call) .msg-av { display: none; }
+html[data-mtheme="a2015"] .m-field { background: #fff; border-bottom: 1px solid #ddd; border-radius: 0; }
+html[data-mtheme="a2015"] .m-send { background: #00aff0; }
+
+/* ============================================================
+   2021: donker
+   ============================================================ */
+html[data-mtheme="m2021"] { --m-blue: #3a96dd; --m-bubble: #24476b; --m-other: #2a2a2e; }
+html[data-mtheme="m2021"] :is(body, .app, .side, .list, .pane, .chat, .compose, .home) { background: #000 !important; }
+html[data-mtheme="m2021"] .mhead { justify-content: center; background: #000; min-height: calc(58px + var(--sat, 0px)); }
+html[data-mtheme="m2021"] .mh-me { display: inline-block; margin: 0; width: 38px; height: 38px; }
+html[data-mtheme="m2021"] .search { padding: 4px 14px 10px; }
+html[data-mtheme="m2021"] .search input { background-color: #1f1f22; border-radius: 10px; height: 38px; }
+html[data-mtheme="m2021"] .list-head { color: #fff; font-size: 15px; font-weight: 600; padding: 10px 16px 4px; }
+html[data-mtheme="m2021"] .list-av { width: 50px; height: 50px; }
+html[data-mtheme="m2021"] .row .name { font-weight: 500; }
+html[data-mtheme="m2021"] .row .mood, html[data-mtheme="m2021"] .row .when { color: #8d8d93 !important; font-weight: 400 !important; }
+html[data-mtheme="m2021"] .row .badge { background: #3a96dd; }
+html[data-mtheme="m2021"] .mnav { background: #111; border-top: 1px solid #222; }
+html[data-mtheme="m2021"] .mnav-pill button { color: #8d8d93; font-weight: 500; font-size: 10px; }
+html[data-mtheme="m2021"] .mnav-pill button.on { color: #3a96dd; background: none; }
+html[data-mtheme="m2021"] .mnav-pill [data-nav="calls"] { order: -1; }
+html[data-mtheme="m2021"] .mnav-pill [data-nav="recent"] { order: -2; }
+html[data-mtheme="m2021"] .mnav-add {
+  display: flex; position: fixed; right: 16px; bottom: calc(72px + var(--sab, env(safe-area-inset-bottom))); width: 54px; height: 54px;
+  border: 0; border-radius: 50%; background: #3a96dd; box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+}
+html[data-mtheme="m2021"] .conv-head { background: #000 !important; border-bottom: 1px solid #1c1c1e; }
+html[data-mtheme="m2021"] .msg .text { border-radius: 16px !important; }
+html[data-mtheme="m2021"] .msg.mine .text { background: #24476b; }
+html[data-mtheme="m2021"] .m-field { background: #1f1f22; }
+html[data-mtheme="m2021"] :is(.menu, .sheet, .emo-pop, .dialog) { background: #1c1c1e !important; border-color: #2c2c2e !important; color: #e9ecef; }
 }

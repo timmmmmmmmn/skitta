@@ -49,6 +49,7 @@ class SkittaService : Service() {
     private val ringConv = HashMap<String, Long>()
     private val unread = ConcurrentHashMap<Long, Int>()
     private val mutedUntil = ConcurrentHashMap<Long, Long>()
+    @Volatile private var lastRefresh = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -133,21 +134,22 @@ class SkittaService : Service() {
         })
     }
 
-    // Elke 45 seconden een klein teken van leven; de server antwoordt zonder wakker te worden.
-    // Komt er twee keer geen antwoord, dan is de verbinding stil weggevallen: opnieuw verbinden.
+    // Elke 75 seconden een klein teken van leven (net onder de 100 s waarna Cloudflare een stille
+    // verbinding sluit); de server antwoordt zonder wakker te worden. Elke ping zet de radio even aan,
+    // dus niet vaker dan nodig. Komt er twee keer geen antwoord, dan is de verbinding stil weggevallen.
     @Volatile private var lastSeen = 0L
 
     private fun schedulePing(ws: WebSocket) {
         main.postDelayed({
             if (socket === ws && !stopped) {
-                if (System.currentTimeMillis() - lastSeen > 100_000L) {
+                if (System.currentTimeMillis() - lastSeen > 170_000L) {
                     ws.cancel()
                     return@postDelayed
                 }
                 ws.send("""{"t":"ping"}""")
                 schedulePing(ws)
             }
-        }, 45_000L)
+        }, 75_000L)
     }
 
     private var network: android.net.ConnectivityManager.NetworkCallback? = null
@@ -230,7 +232,14 @@ class SkittaService : Service() {
                     }.start()
                 }
             }
-            "conv" -> Thread { refreshNames() }.start()
+            // Niet bij elk "conv"-seintje drie verzoeken doen: één keer per halve minuut is genoeg.
+            "conv" -> {
+                val now = System.currentTimeMillis()
+                if (now - lastRefresh > 30_000L) {
+                    lastRefresh = now
+                    Thread { refreshNames() }.start()
+                }
+            }
             "read" -> {
                 if (e.optLong("u") == myId) {
                     val c = e.optLong("c")

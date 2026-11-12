@@ -421,7 +421,12 @@ class MainActivity : ComponentActivity() {
             .filter { it.id >= 2_000_000 }.forEach { (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(it.id) }
         Updater.resume(this)
         Updater.checkQuietly(this)
-        // Het gesprek dat open staat is nu gelezen; dan verdwijnt ook de melding ervan.
+        // Het gesprek dat open staat is nu gelezen: de melding meteen weg (niet wachten tot de pagina
+        // wakker is, want die weet net na terugkeren nog niet altijd dat hij weer in beeld is).
+        if (viewing != 0L) {
+            Meldingen.clearConv(this, viewing)
+            SkittaService.clear(this, viewing)
+        }
         if (pageReady) web.evaluateJavascript("window.skittaResume && skittaResume()", null)
     }
 
@@ -441,11 +446,16 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         if (!unlocking && cover == null) stoppedAt = System.currentTimeMillis()
-        // Niet in beeld en niet aan het bellen: de pagina pauzeren (geen geluid, geen stroom).
-        // De achtergrondverbinding geeft de meldingen.
+        // Niet in beeld en niet aan het bellen: de pagina laat haar eigen verbinding los en wordt gepauzeerd
+        // (geen geluid, geen stroom). De achtergrondverbinding geeft de meldingen; bij terugkomen haalt de
+        // pagina in wat ze gemist heeft.
         if (!callActive) {
-            web.onPause()
-            web.pauseTimers()
+            web.evaluateJavascript("window.skittaSleep && skittaSleep()") {
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !callActive) {
+                    web.onPause()
+                    web.pauseTimers()
+                }
+            }
         }
         Updater.installIfReady(this)
     }
@@ -626,6 +636,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        /** Welk gesprek er op het scherm staat; staat de app in beeld, dan is de melding ervan meteen weg. */
+        @JavascriptInterface
+        fun viewing(c: String) {
+            val conv = c.toLongOrNull() ?: 0L
+            viewing = conv
+            if (conv != 0L && inFront) clearConv(c)
+        }
+
         @JavascriptInterface
         fun retry() {
             runOnUiThread { this@MainActivity.retry() }
@@ -739,6 +757,7 @@ class MainActivity : ComponentActivity() {
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             pageReady = false
+            viewing = 0L
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) glassMenu?.hideBar()
         }
 
@@ -761,6 +780,8 @@ class MainActivity : ComponentActivity() {
         private val HOME: String get() = "${SkittaService.SITE}/"
         @Volatile var inFront = false
         @Volatile var callActive = false
+        /** Het gesprek dat nu op het scherm staat (0 = geen); de pagina houdt dit bij. */
+        @Volatile var viewing = 0L
     }
 }
 
