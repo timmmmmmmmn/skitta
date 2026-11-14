@@ -2676,12 +2676,14 @@ async function sendBig(convId, blob, meta, local, cid) {
       xhr.upload.onprogress = (e) => {
         const el = document.querySelector(`[data-cid="${cid}"] .progress`);
         if (el) el.textContent = `Uploaden… ${Math.round(((offset + e.loaded) / sealedBlob.size) * 100)}%`;
+        eilandUpload(cid, convId, Math.min(0.99, (offset + e.loaded) / sealedBlob.size));
       };
       xhr.onload = () => ([201, 202].includes(xhr.status) ? resolve() : reject(new Error('Uploaden naar de bestandsserver is mislukt')));
       xhr.onerror = () => reject(new Error('De bestandsserver is niet bereikbaar'));
       xhr.send(part);
-    });
+    }).catch((err) => { Eiland.haal(`upload-${cid}`); throw err; });
   }
+  eilandUpload(cid, convId, 1);
   meta.big = ticket.id;
   meta.until = ticket.expires_at;
   const text = JSON.stringify(meta);
@@ -5775,6 +5777,7 @@ const Call = {
     if (!c?.started) return;
     const s = duration(Math.round((Date.now() - c.started) / 1000));
     for (const el of document.querySelectorAll('.call-timer')) el.textContent = s;
+    eilandSync();
   },
 
   // Het belscherm boven het gesprek (of een balk als je een ander gesprek open hebt).
@@ -5815,6 +5818,7 @@ const Call = {
 
   refresh() {
     try { window.SkittaNative?.callActive?.(!!(this.active || GroupCall.active)); } catch {}
+    eilandSync();
     if (typeof S.cur === 'number') {
       const conv = S.convs.get(S.cur);
       const pane = $('#pane');
@@ -5827,6 +5831,132 @@ const Call = {
     }
   }
 };
+
+// ---------- Eiland (eiland.js, zie eiland/) ----------
+// Op de telefoon (nieuwe stijl) een Dynamic Island-achtige pil bovenin voor wat buiten beeld doorloopt:
+// een inkomende oproep, een gesprek als je niet in dat gesprek kijkt en grote bijlagen die uploaden.
+// eiland.js laadt pas als er voor het eerst iets te tonen is; lukt dat niet, dan blijft alles zoals het was.
+const Eiland = {
+  laden: null,
+  vorm: {}, // id -> sleutel van wat er nu staat; alleen bij een andere sleutel alles opnieuw opbouwen
+  aan: () => mobile() && !S.opts.mtheme && !!S.me,
+  doe(f) {
+    this.laden ||= import('/eiland.js').then((m) => m.maak({ top: 'env(safe-area-inset-top, 0px)', z: 1000 })).catch(() => null);
+    return this.laden.then((e) => { if (e) f(e); return e; });
+  },
+  zet(id, sleutel, maak, werk, open) {
+    if (this.vorm[id] !== sleutel) {
+      this.vorm[id] = sleutel;
+      return this.doe((e) => { e.toon(id, maak()); if (open) e.open(id); });
+    }
+    if (werk) this.doe((e) => e.toon(id, werk()));
+    return this.laden;
+  },
+  haal(id) {
+    if (!(id in this.vorm)) return;
+    delete this.vorm[id];
+    this.laden?.then((e) => e?.weg(id));
+  }
+};
+
+const eilandSvg = (name, px = 20) => ({ html: `<svg viewBox="0 0 24 24" width="${px}" height="${px}" fill="currentColor"><path d="${ICONS[name]}"/></svg>` });
+const eilandTekst = (tekst, stijl) => ({ tekst, stijl: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...stijl } });
+function eilandAv(wie, px, groep) {
+  return () => {
+    const a = groep ? groupAvatar(wie) : avatar(wie);
+    Object.assign(a.style, { width: `${px}px`, height: `${px}px`, borderRadius: '50%', border: '0', flex: 'none' });
+    return a;
+  };
+}
+
+function eilandSync() {
+  const aan = Eiland.aan();
+  const root = document.documentElement;
+  // Inkomende oproep: in het eiland in plaats van het losse venster.
+  const ci = Call.incoming && !Call.active ? Call.incoming : null;
+  const gi = !ci && GroupCall.incoming;
+  const inc = ci || gi;
+  if (aan && inc) {
+    const u = userOf(inc.from);
+    const conv = gi ? S.convs.get(gi.g) : null;
+    const naam = gi ? (conv ? convTitle(conv) : 'Groep') : u.display_name;
+    const wat = gi ? `${u.display_name} begon een groepsgesprek` : ci.video ? 'wil met je videobellen' : 'belt je';
+    const av = (px) => eilandAv(gi ? conv : u, px, !!gi);
+    const neem = () => (gi ? GroupCall.join(gi.g, gi.id, false) : Call.accept(false));
+    const weiger = () => (gi ? GroupCall.dismissIncoming(true) : Call.decline());
+    root.classList.add('eiland-oproep');
+    Eiland.zet('oproep', inc.id, () => ({
+      label: `${naam} ${wat}`, prioriteit: 2, klik: () => Eiland.doe((e) => e.open('oproep')),
+      klein: { links: av(24), rechts: { ...eilandSvg('phone'), stijl: { color: '#30d158' } } },
+      groot: {
+        links: av(48),
+        midden: { kolom: [eilandTekst(naam, { fontSize: 17, fontWeight: 600 }), eilandTekst(wat, { fontSize: 14, color: '#98989f' })], stijl: { maxWidth: 160, paddingTop: 4 } },
+        rechts: [
+          { knop: eilandSvg('hangup', 22), kleur: '#ff3b30', label: 'Weigeren', klik: weiger },
+          { knop: eilandSvg(inc.video ? 'video' : 'phone', 22), kleur: '#30d158', label: 'Opnemen', klik: neem }
+        ]
+      }
+    }), null, true).then((e) => { if (!e) root.classList.remove('eiland-oproep'); });
+  } else {
+    root.classList.remove('eiland-oproep');
+    Eiland.haal('oproep');
+  }
+
+  // Lopend gesprek, alleen als je niet naar dat gesprek kijkt.
+  const c = Call.active;
+  const a = !c && GroupCall.active;
+  const loopt = c || a;
+  const convId = c ? c.conv : a?.g;
+  const kijkt = S.cur === convId && $('#app').classList.contains('show-pane');
+  if (!aan || !loopt || kijkt) { Eiland.haal('gesprek'); return; }
+  const u = c ? userOf(c.peer) : null;
+  const conv = a ? S.convs.get(a.g) : null;
+  const naam = c ? u.display_name : conv ? convTitle(conv) : 'Groepsgesprek';
+  const av = (px) => eilandAv(c ? u : conv, px, !c);
+  const stand = loopt.started ? duration(Math.round((Date.now() - loopt.started) / 1000))
+    : c ? ({ ringing: 'Bellen…', reconnecting: 'Herstellen…' }[c.state] || 'Verbinden…') : 'Wachten…';
+  const tijd = eilandTekst(stand, { color: '#30d158', fontWeight: 600, fontVariantNumeric: 'tabular-nums' });
+  const stil = Call.muted ? { ...eilandSvg('micoff', 16), stijl: { color: '#ff453a' } } : null;
+  const werk = () => ({
+    klein: { rechts: [stil, tijd] },
+    groot: { midden: { kolom: [eilandTekst(naam, { fontSize: 17, fontWeight: 600 }), tijd], stijl: { maxWidth: 160, paddingTop: 4 } } }
+  });
+  Eiland.zet('gesprek', `${loopt.id}|${Call.muted}`, () => ({
+    label: `In gesprek met ${naam}`, prioriteit: 1, klik: () => openConv(convId),
+    klein: { links: av(24), rechts: [stil, tijd] },
+    groot: {
+      ...werk().groot,
+      links: av(48),
+      rechts: [
+        { knop: eilandSvg(Call.muted ? 'micoff' : 'mic', 22), kleur: Call.muted ? '#fff' : '#3a3a3c', stijl: { color: Call.muted ? '#000' : '#fff' },
+          label: Call.muted ? 'Microfoon aanzetten' : 'Microfoon dempen', klik: () => (c ? Call.toggleMute() : GroupCall.toggleMute()) },
+        { knop: eilandSvg('hangup', 22), kleur: '#ff3b30', label: 'Ophangen', klik: () => (c ? Call.hangup() : GroupCall.hangup()) }
+      ]
+    }
+  }), werk);
+}
+
+// Grote bijlage uploaden: voortgang in het eiland zolang je niet in dat gesprek kijkt.
+function eilandUpload(cid, convId, deel) {
+  const id = `upload-${cid}`;
+  if (!Eiland.aan() || convVisible(convId)) return Eiland.haal(id);
+  const klaar = deel >= 1;
+  const conv = S.convs.get(convId);
+  const pct = eilandTekst(klaar ? 'Verstuurd' : `${Math.round(deel * 100)}%`, { fontSize: 14, color: '#98989f', fontVariantNumeric: 'tabular-nums' });
+  const werk = () => ({
+    klein: { rechts: klaar ? { ...eilandSvg('send', 18), stijl: { color: '#30d158' } } : { ring: deel, kleur: '#0a84ff' } },
+    groot: { midden: { kolom: [eilandTekst('Bestand versturen', { fontSize: 17, fontWeight: 600 }), pct], stijl: { maxWidth: 220, paddingTop: 4 } }, onder: { balk: deel, kleur: klaar ? '#30d158' : '#0a84ff' } }
+  });
+  Eiland.zet(id, 'upload', () => ({
+    label: `Bestand versturen${conv ? ` naar ${convTitle(conv)}` : ''}`, klik: () => openConv(convId),
+    ...werk(), klein: { links: { ...eilandSvg('clip', 18), stijl: { color: '#0a84ff' } }, ...werk().klein },
+    groot: { ...werk().groot, links: { ...eilandSvg('clip', 28), stijl: { color: '#0a84ff', paddingTop: 6 } } }
+  }), werk);
+  if (klaar) setTimeout(() => Eiland.haal(id), 1800);
+}
+
+new MutationObserver(() => eilandSync()).observe($('#app'), { attributes: true, attributeFilter: ['class'] });
+window.addEventListener('resize', () => eilandSync());
 
 function upsertAndRender(m) {
   if (bucket(m.c).loaded) upsertMessage(m);

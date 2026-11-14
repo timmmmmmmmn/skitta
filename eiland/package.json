@@ -1,0 +1,11 @@
+{
+  "name": "eiland-brug",
+  "private": true,
+  "description": "Bouwt het eiland (islandcn, MIT: een Dynamic Island-achtige pil) met React tot één los bestand voor de site.",
+  "scripts": { "build": "./bouw.sh" },
+  "dependencies": {
+    "esbuild": "0.25.10",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}
