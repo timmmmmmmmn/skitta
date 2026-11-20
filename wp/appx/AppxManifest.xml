@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Windows 10 Mobile-app (hosted web app): opent https://skitta.timvanbergen.nl/wp, de EdgeHTML-versie die wp/build.mjs maakt.
-     Updates aan de site komen zo vanzelf in de app; het pakket hoeft alleen opnieuw bij nieuwe tegels of rechten. -->
+     Updates aan de site komen vanzelf in de app. Verhoog Version alleen bij een nieuw pakket (tegels, rechten);
+     Toko ziet aan dit nummer dat er een update is. -->
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
          IgnorableNamespaces="uap mp">
-  <Identity Name="TimvanBergen.Skitta" Publisher="CN=Tim van Bergen" Version="1.0.0.0" ProcessorArchitecture="neutral" />
+  <Identity Name="TimvanBergen.Skitta" Publisher="CN=Tim van Bergen" Version="1.0.1.0" ProcessorArchitecture="neutral" />
   <mp:PhoneIdentity PhoneProductId="b9651136-5d88-46bf-ad54-ff7d549ebebd" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
     <DisplayName>Skitta</DisplayName>
@@ -31,6 +32,14 @@
       <uap:ApplicationContentUriRules>
         <uap:Rule Match="https://skitta.timvanbergen.nl/" Type="include" WindowsRuntimeAccess="none" />
       </uap:ApplicationContentUriRules>
+      <Extensions>
+        <!-- zo kan Toko de app openen -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="tvb-skitta">
+            <uap:DisplayName>Skitta</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>
