@@ -23,7 +23,7 @@ jobs:
           WP_PFX_BASE64: ${{ secrets.WP_PFX_BASE64 }}
           WP_PFX_PASSWORD: ${{ secrets.WP_PFX_PASSWORD }}
         run: |
-          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" | Sort-Object Name -Descending | Select-Object -First 1
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" | Where-Object { Test-Path "$($_.FullName)\makeappx.exe" } | Sort-Object { [version]$_.Parent.Name } -Descending | Select-Object -First 1
           $pfx = "$env:RUNNER_TEMP\sign.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WP_PFX_BASE64))
           & "$($sdk.FullName)\makeappx.exe" pack /o /d wp\appx /p Skitta.appx
