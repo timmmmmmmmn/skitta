@@ -95,3 +95,9 @@ npx wrangler dev
 ```
 
 Online zetten: `npx wrangler d1 migrations apply DB --remote` (bij een nieuwe migratie) en `npx wrangler deploy`.
+
+## Windows 10 Mobile (Lumia)
+
+`wp/build.mjs` maakt een versie voor EdgeHTML 13–15: `public/wp.html` + `public/wp/` (één ES2015-script met polyfills, CSS-variabelen ingevuld). Na wijzigingen aan `public/`: `cd wp && npm install && node build.mjs`, daarna deployen. De app zelf (`wp/appx`) is een hosted web app die `/wp` opent; `.github/workflows/wp.yml` bouwt en ondertekent `Skitta.appx` (release `wp-latest`).
+
+Installeren op de telefoon: Instellingen → Bijwerken en beveiliging → Voor ontwikkelaars → Ontwikkelaarsmodus, dan `TimVanBergen.cer` en `Skitta.appx` openen.

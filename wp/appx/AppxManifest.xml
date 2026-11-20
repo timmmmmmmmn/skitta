@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Windows 10 Mobile-app (hosted web app): opent https://skitta.timvanbergen.nl/wp, de EdgeHTML-versie die wp/build.mjs maakt.
+     Updates aan de site komen zo vanzelf in de app; het pakket hoeft alleen opnieuw bij nieuwe tegels of rechten. -->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         IgnorableNamespaces="uap mp">
+  <Identity Name="TimvanBergen.Skitta" Publisher="CN=Tim van Bergen" Version="1.0.0.0" ProcessorArchitecture="neutral" />
+  <mp:PhoneIdentity PhoneProductId="b9651136-5d88-46bf-ad54-ff7d549ebebd" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
+  <Properties>
+    <DisplayName>Skitta</DisplayName>
+    <PublisherDisplayName>Tim van Bergen</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.10240.0" MaxVersionTested="10.0.15063.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="nl-NL" />
+  </Resources>
+  <Applications>
+    <Application Id="App" StartPage="https://skitta.timvanbergen.nl/wp">
+      <uap:VisualElements DisplayName="Skitta" Description="Chatten en bellen met je vrienden." BackgroundColor="#00aff0"
+                          Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\Square71x71Logo.png" ShortName="Skitta" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#00aff0" />
+        <uap:InitialRotationPreference>
+          <uap:Rotation Preference="portrait" />
+        </uap:InitialRotationPreference>
+      </uap:VisualElements>
+      <uap:ApplicationContentUriRules>
+        <uap:Rule Match="https://skitta.timvanbergen.nl/" Type="include" WindowsRuntimeAccess="none" />
+      </uap:ApplicationContentUriRules>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <DeviceCapability Name="microphone" />
+    <DeviceCapability Name="webcam" />
+  </Capabilities>
+</Package>

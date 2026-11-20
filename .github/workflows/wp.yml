@@ -1,0 +1,48 @@
+name: Windows 10 Mobile-app
+
+# Bouwt de appx voor Windows 10 Mobile (Lumia): een hosted web app die /wp opent (zie wp/build.mjs).
+# Ondertekend met het eigen certificaat (wp/TimVanBergen.cer op de telefoon installeren).
+on:
+  push:
+    branches: [main]
+    paths: ['wp/appx/**', '.github/workflows/wp.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appx:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Appx maken en ondertekenen
+        shell: pwsh
+        env:
+          WP_PFX_BASE64: ${{ secrets.WP_PFX_BASE64 }}
+          WP_PFX_PASSWORD: ${{ secrets.WP_PFX_PASSWORD }}
+        run: |
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" | Sort-Object Name -Descending | Select-Object -First 1
+          $pfx = "$env:RUNNER_TEMP\sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WP_PFX_BASE64))
+          & "$($sdk.FullName)\makeappx.exe" pack /o /d wp\appx /p Skitta.appx
+          if ($LASTEXITCODE) { exit 1 }
+          & "$($sdk.FullName)\signtool.exe" sign /fd SHA256 /f $pfx /p $env:WP_PFX_PASSWORD Skitta.appx
+          if ($LASTEXITCODE) { exit 1 }
+          Remove-Item $pfx
+
+      - name: Proefinstallatie (manifest en handtekening kloppen)
+        shell: pwsh
+        run: |
+          Import-Certificate -FilePath wp\TimVanBergen.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          Add-AppxPackage -Path Skitta.appx
+          Get-AppxPackage -Name 'TimvanBergen.*' | Format-List Name, Version, Publisher
+
+      - name: Release publiceren
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete wp-latest --yes --cleanup-tag 2>$null
+          gh release create wp-latest Skitta.appx wp\TimVanBergen.cer --title "Windows 10 Mobile-app" --notes "Voor Windows 10 Mobile (bijv. Lumia 435). Installeren: zet Ontwikkelaarsmodus aan, open TimVanBergen.cer en daarna Skitta.appx." --latest=false
