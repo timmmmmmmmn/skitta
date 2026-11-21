@@ -9,6 +9,7 @@ import path from 'node:path';
 import postcss from 'postcss';
 import customProps from 'postcss-custom-properties';
 import { transform as lcss } from 'lightningcss';
+import edge13 from './edge13css.mjs';
 
 const hier = path.dirname(new URL(import.meta.url).pathname);
 const pub = path.join(hier, '../public');
@@ -52,7 +53,9 @@ async function bundel(entry, uitNaam) {
   });
   // esbuild kan niet naar ES5; SWC zet de bundel om voor EdgeHTML 13 (let/const, destructuring, async)
   const js = await swc.transform(r.outputFiles[0].text, {
-    env: { targets: { edge: '13' }, bugfixes: true },
+    // naar ES5 (doel IE 11): Chakra in Edge 14 (de Lumia) maakte na JIT-compilatie kapotte objecten met native afgeleide
+    // klassen; als ES5 draait alles via het oude, beproefde pad van de engine
+    env: { targets: { ie: '11' } },
     jsc: { parser: { syntax: 'ecmascript' }, minify: { compress: { passes: 1 }, mangle: true } },
     minify: true,
     isModule: false,
@@ -64,8 +67,11 @@ const n1 = await bundel('entry.js', 'app.js');
 const n2 = await bundel('../public/theme.js', 'theme.js');
 
 // CSS: alle vier de bladen achter elkaar, variabelen ingevuld (EdgeHTML 13/14 kent ze niet)
-let css = ['app.css', 'themes.css', 'mobile.css', 'mobile-themes.css'].map((f) => fs.readFileSync(path.join(pub, f), 'utf8')).join('\n');
+let css = ['app.css', 'themes.css', 'mobile.css', 'mobile-themes.css'].map((f) => fs.readFileSync(path.join(pub, f), 'utf8')).join('\n') + '\n' + fs.readFileSync(path.join(hier, 'edge-fix.css'), 'utf8');
 css = (await postcss([customProps({ preserve: true })]).process(css, { from: undefined })).css;
+css = lcss({ code: Buffer.from(css), minify: true, targets: { edge: 13 << 16 }, errorRecovery: true }).code.toString();
+// grid → flex, gap → marges, rekenfuncties uitgerekend: wat Edge 13/14 anders stil negeert (zie edge13css.mjs)
+css = (await postcss([edge13()]).process(css, { from: undefined })).css;
 css = lcss({ code: Buffer.from(css), minify: true, targets: { edge: 13 << 16 }, errorRecovery: true }).code.toString();
 fs.writeFileSync(path.join(uit, 'app.css'), css);
 

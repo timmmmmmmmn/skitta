@@ -1,0 +1,4 @@
+/* Windows 10 Mobile (EdgeHTML 14): geen automatische tekstvergroting, geen animaties (die laten de telefoon steeds
+   opnieuw tekenen), en glas zonder backdrop-filter krijgt een dichte achtergrond zodat tekst leesbaar blijft. */
+html { -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+*, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; }

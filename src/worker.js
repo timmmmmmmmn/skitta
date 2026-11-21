@@ -1462,6 +1462,11 @@ export default {
       url.protocol = 'https:';
       return Response.redirect(url.toString(), 308);
     }
+    // opstartlog van de Windows 10 Mobile-versie (wp/fout.js): alleen naar de worker-log (wrangler tail), niets opgeslagen
+    if (url.pathname === '/api/wplog' && request.method === 'POST') {
+      console.log('wplog', (await request.text()).slice(0, 8000));
+      return new Response(null, { status: 204 });
+    }
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
       try {
         return await route(request, env, url);
