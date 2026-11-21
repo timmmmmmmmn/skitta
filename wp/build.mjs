@@ -55,7 +55,8 @@ async function bundel(entry, uitNaam) {
   const js = await swc.transform(r.outputFiles[0].text, {
     // naar ES5 (doel IE 11): Chakra in Edge 14 (de Lumia) maakte na JIT-compilatie kapotte objecten met native afgeleide
     // klassen; als ES5 draait alles via het oude, beproefde pad van de engine
-    env: { targets: { ie: '11' } },
+    // maar for…of, parameters en spread niet: SWC maakt daar try/finally-helpers van, die de Chakra-JIT niet compileert
+    env: { targets: { ie: '11' }, exclude: ['transform-for-of', 'transform-parameters', 'transform-spread'] },
     jsc: { parser: { syntax: 'ecmascript' }, minify: { compress: { passes: 1 }, mangle: true } },
     minify: true,
     isModule: false,
