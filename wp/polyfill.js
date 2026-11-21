@@ -2,6 +2,7 @@
 import 'core-js/stable';
 import 'whatwg-fetch';
 import 'regenerator-runtime/runtime';
+import 'intersection-observer';
 
 const E = Element.prototype, D = window.document;
 if (!E.matches) E.matches = E.msMatchesSelector || E.webkitMatchesSelector;
@@ -132,4 +133,62 @@ if (!window.createImageBitmap) {
     img.onerror = () => { URL.revokeObjectURL(url); nee(new Error('afbeelding kon niet geladen worden')); };
     img.src = url;
   });
+}
+
+// replaceChildren kwam pas in Edge 86
+for (const P of [E, DocumentFragment.prototype, Document.prototype]) {
+  if (!P.replaceChildren) P.replaceChildren = function (...n) { while (this.lastChild) this.removeChild(this.lastChild); if (n.length) this.appendChild(frag(n)); };
+}
+// TextEncoder/TextDecoder bestaan niet in EdgeHTML (nodig voor wachtwoorden en sleutels): alleen UTF-8
+if (!window.TextEncoder) {
+  window.TextEncoder = class TextEncoder {
+    get encoding() { return 'utf-8'; }
+    encode(s = '') {
+      const bin = unescape(encodeURIComponent(String(s))), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return u;
+    }
+  };
+}
+if (!window.TextDecoder) {
+  window.TextDecoder = class TextDecoder {
+    constructor(label = 'utf-8', opt = {}) { this.fatal = !!opt.fatal; }
+    get encoding() { return 'utf-8'; }
+    decode(b) {
+      if (!b) return '';
+      const u = b instanceof Uint8Array ? b : ArrayBuffer.isView(b) ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : new Uint8Array(b);
+      let bin = '';
+      for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+      try { return decodeURIComponent(escape(bin)); } catch (e) {
+        if (this.fatal) throw new TypeError('ongeldige UTF-8');
+        // kapotte reeksen: per teken, met U+FFFD waar het niet lukt
+        return bin.replace(/[\xc0-\xff][\x80-\xbf]*|[\x80-\xbf]/g, (q) => { try { return decodeURIComponent(escape(q)); } catch (x) { return '\ufffd'; } });
+      }
+    }
+  };
+}
+// ResizeObserver (Edge 79): grootte per beeld vergelijken, alleen zolang er iets bekeken wordt
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class ResizeObserver {
+    constructor(cb) { this.cb = cb; this.els = new Map(); this.raf = 0; }
+    observe(el) { if (!this.els.has(el)) this.els.set(el, ''); this.tik(); }
+    unobserve(el) { this.els.delete(el); }
+    disconnect() { this.els.clear(); clearTimeout(this.raf); this.raf = 0; }
+    tik() {
+      if (this.raf) return;
+      const stap = () => {
+        this.raf = 0;
+        if (!this.els.size) return;
+        const lijst = [];
+        this.els.forEach((oud, el) => {
+          if (!el.isConnected) { this.els.delete(el); return; }
+          const w = el.clientWidth, h = el.clientHeight, nu = w + 'x' + h;
+          if (nu !== oud) { this.els.set(el, nu); lijst.push({ target: el, contentRect: { width: w, height: h, top: 0, left: 0, right: w, bottom: h, x: 0, y: 0 } }); }
+        });
+        if (lijst.length) this.cb(lijst, this);
+        this.raf = setTimeout(stap, 200);
+      };
+      this.raf = setTimeout(stap, 0);
+    }
+  };
 }

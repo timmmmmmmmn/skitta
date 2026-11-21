@@ -79,6 +79,6 @@ html = vervang(html, `  <link rel="stylesheet" href="/app.css">
   <script src="/wp/theme.js"></script>
   <script src="/wp/app.js" defer></script>`, 'kop');
 html = html.replace('<link rel="manifest" href="/manifest.webmanifest">\n', '');
-html = html.replace('<head>', '<head>\n  <meta http-equiv="X-UA-Compatible" content="IE=edge">');
+html = html.replace('<head>', () => '<head>\n  <meta http-equiv="X-UA-Compatible" content="IE=edge">\n  <script>' + fs.readFileSync(path.join(hier, 'fout.js'), 'utf8') + '</script>');
 fs.writeFileSync(path.join(pub, 'wp.html'), html);
 console.log('klaar:', n1, 'bytes app.js,', n2, 'bytes theme.js,', css.length, 'bytes CSS');
