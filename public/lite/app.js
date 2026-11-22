@@ -569,7 +569,9 @@
     renderChats();
     api('GET', '/api/conversations/' + c.id + '/messages').then(function (r) {
       if (current !== c) return;
-      msgs = normAll(r.messages);
+      var pending = [];
+      each(msgs, function (m) { if (!m.id) pending.push(m); }); // net verstuurd terwijl de chat laadde
+      msgs = normAll(r.messages).concat(pending);
       more = r.more;
       renderMsgs();
       scrollBottom();
@@ -844,8 +846,12 @@
   // Eerst kiezen: met de camera maken of uit de galerij. Wat je maakt wordt meteen verstuurd.
   $('cPhoto').addEventListener('click', function () { chooseSource('photo'); });
   $('cVideo').addEventListener('click', function () { chooseSource('video'); });
+  // De chat waar de foto of video heen moet. Op de Lumia gaat de chat soms dicht terwijl de camera open is,
+  // dus niet op `current` vertrouwen: na de camera gaat hij gewoon weer open.
+  var mediaChat = null;
   function chooseSource(kind) {
     if (!current) return;
+    mediaChat = current;
     var video = kind === 'video';
     dialog(video ? 'Video sturen' : 'Foto sturen', video ? 'Neem een video op of kies er een die je al hebt.' : 'Maak een foto of kies er een die je al hebt.',
       [video ? 'opnemen' : 'camera', 'kiezen', 'annuleren'], function (i) {
@@ -866,8 +872,14 @@
     inp.click();
   }
   function picked(kind, file) {
-    if (!file || !current) return;
-    if (kind === 'video') sendVideo(file); else sendPhoto(file);
+    var c = mediaChat || current;
+    if (!file || !c) return;
+    if (kind === 'video') sendVideo(file, c); else sendPhoto(file, c);
+  }
+  function backTo(c) {
+    if (current === c) return;
+    log('chat weer openen');
+    openChat(c);
   }
   each(['fPhoto', 'fPhotoCam', 'fVideo', 'fVideoCam'], function (id) {
     $(id).addEventListener('change', function () { picked(/Video/.test(id) ? 'video' : 'photo', $(id).files[0]); });
@@ -1069,28 +1081,26 @@
     });
   }
 
-  function sendPhoto(file) {
-    var c = current;
+  function sendPhoto(file, c) {
     progress(1);
     prepPhoto(file).then(function (p) {
       progress(-1);
-      if (current !== c) return;
+      backTo(c);
       var m = localMsg('photo', { w: p.w, h: p.h, local: URL.createObjectURL(p.thumb), blob: p.full, blobType: p.fullType, thumbBlob: p.thumb });
       addLocal(m);
       uploadAndPost(m);
     }, function (e) { progress(-1); oops(e); });
   }
 
-  function sendVideo(file) {
+  function sendVideo(file, c) {
     if (file.size > 25 * 1024 * 1024) {
       return dialog('Video te groot', 'Video\'s mogen maximaal 25 MB zijn. Deze is ' + Math.round(file.size / 1048576) + ' MB. Maak hem korter en probeer het opnieuw.');
     }
-    var c = current;
     progress(1);
     prepVideo(file).then(function (p) {
       progress(-1);
       log('video: voorbeeld ' + (p.thumb ? 'ja' : 'nee') + ' ' + p.w + 'x' + p.h + (current !== c ? ' (chat dicht)' : ''));
-      if (current !== c) return;
+      backTo(c);
       var type = file.type || 'video/mp4';
       var m = localMsg('video', { w: p.w, h: p.h, local: p.thumb ? URL.createObjectURL(p.thumb) : null, blob: file, blobType: type, thumbBlob: p.thumb });
       addLocal(m);
