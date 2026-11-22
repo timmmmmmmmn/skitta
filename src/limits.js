@@ -40,12 +40,16 @@ export async function storedBytes(env) {
 }
 
 // Mag deze upload? Gooit een nette foutmelding als een grens bereikt is.
-export async function checkUpload(env, uid, size) {
-  if (size > LIMITS.fileBytes) throw new HttpError(413, `Bijlagen mogen maximaal ${LIMITS.fileBytes / 1024 ** 2} MB zijn`);
+// opts: andere grenzen per bestand/dag (onversleutelde video's van Skitta Lite mogen groter, zie lite.js);
+// de totalen voor de hele site blijven altijd gelden.
+export async function checkUpload(env, uid, size, opts = {}) {
+  const fileMax = opts.fileBytes || LIMITS.fileBytes;
+  const dayMax = opts.dailyBytes || LIMITS.userDailyBytes;
+  if (size > fileMax) throw new HttpError(413, `Bijlagen mogen maximaal ${fileMax / 1024 ** 2} MB zijn`);
   const [stored, writes, today] = await Promise.all([storedBytes(env), used(env, usageKey.write()), used(env, usageKey.upload(uid))]);
   if (stored + size > LIMITS.r2Bytes) throw new HttpError(507, 'De opslag van Skitta is vol. Vraag de beheerder om oude bijlagen op te ruimen.');
   if (writes >= LIMITS.r2Writes) throw new HttpError(429, 'Skitta heeft deze maand het maximale aantal bijlagen bereikt. Volgende maand kan het weer.');
-  if (today + size > LIMITS.userDailyBytes) throw new HttpError(429, 'Je hebt vandaag al veel bijlagen verstuurd. Morgen kan het weer.');
+  if (today + size > dayMax) throw new HttpError(429, 'Je hebt vandaag al veel bijlagen verstuurd. Morgen kan het weer.');
 }
 
 export async function canRead(env) {

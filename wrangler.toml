@@ -38,3 +38,8 @@ crons = ["*/15 * * * *"]
 [[routes]]
 pattern = "skitta.timvanbergen.nl"
 custom_domain = true
+
+# Skitta Lite (public/lite/, src/lite.js)
+[[routes]]
+pattern = "skittalite.timvanbergen.nl"
+custom_domain = true

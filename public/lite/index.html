@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>Skitta Lite</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Skitta Lite">
+<meta name="msapplication-TileColor" content="#000EB6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="img/icon-192.png">
+<link rel="apple-touch-icon" href="img/icon-180.png">
+<link rel="stylesheet" href="app.css?v=3">
+</head>
+<body>
+<div id="app">
+  <div id="progress"><i></i><i></i><i></i><i></i><i></i></div>
+
+  <!-- inloggen -->
+  <section class="page" id="p-login">
+    <div class="scroll pad">
+      <div class="apptitle">SKITTA LITE</div>
+      <h1 class="big" id="loginTitle">aanmelden</h1>
+      <form id="loginForm" autocomplete="on">
+        <label class="field"><span>Skitta Lite-naam</span><input id="lName" class="tb" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="32"></label>
+        <label class="field"><span>Wachtwoord</span><input id="lPass" class="tb" type="password" name="password" autocomplete="current-password" maxlength="200"></label>
+        <label class="field" id="lPass2Row" hidden><span>Wachtwoord nog een keer</span><input id="lPass2" class="tb" type="password" autocomplete="new-password" maxlength="200"></label>
+        <p class="err" id="lErr"></p>
+        <button class="btn primary" id="lGo" type="submit">aanmelden</button>
+      </form>
+      <p class="hint"><a href="#" id="lSwitch">Nog geen account? Maak er een.</a></p>
+    </div>
+  </section>
+
+  <!-- hoofdscherm met pivot: chats | instellingen -->
+  <section class="page" id="p-main">
+    <div class="pivothead">
+      <div class="apptitle">SKITTA LITE</div>
+      <div class="pivots"><a class="pv on" data-i="0">chats</a><a class="pv" data-i="1">instellingen</a></div>
+    </div>
+    <div class="pivotbody" id="pivotBody">
+      <div class="pitem scroll" id="chatList"></div>
+      <div class="pitem scroll pad" id="settings" hidden>
+        <h3>Thema</h3>
+        <label class="radio"><input type="radio" name="theme" value="dark"><i></i>Donker</label>
+        <label class="radio"><input type="radio" name="theme" value="light"><i></i>Licht</label>
+        <label class="radio" id="themeAutoRow"><input type="radio" name="theme" value="auto"><i></i>Zelfde als de telefoon</label>
+        <h3>Accentkleur</h3>
+        <div class="accents" id="accents"></div>
+        <h3>Account</h3>
+        <p class="sub">Aangemeld als <b id="meName"></b></p>
+        <button class="btn" id="logout">afmelden</button>
+        <div id="getApp">
+          <h3>App</h3>
+          <p class="sub" id="getAppText"></p>
+          <a class="btn" id="getAppBtn" href="download/skittalite.apk">Android-app downloaden</a>
+        </div>
+        <h3>Over</h3>
+        <p class="sub small">Skitta Lite is de lichte versie van Skitta. Je kunt chatten met andere Skitta Lite-gebruikers en met mensen op Skitta. Chats met Skitta Lite zijn niet end-to-end versleuteld.</p>
+      </div>
+    </div>
+    <div class="appbar" id="mainBar">
+      <div class="abtns">
+        <button class="ab" id="newChat"><i data-ic="add"></i><span>nieuw</span></button>
+        <button class="ab more"><i data-ic="more"></i></button>
+      </div>
+      <div class="amenu">
+        <a data-act="settings">instellingen</a>
+        <a data-act="refresh">vernieuwen</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- nieuwe chat -->
+  <section class="page" id="p-new">
+    <div class="head"><button class="back"><i data-ic="back"></i></button><div class="htitle">nieuwe chat</div></div>
+    <div class="scroll">
+      <div class="pad"><label class="field"><span>Naar</span><input id="nQuery" class="tb" placeholder="naam of Skittanaam" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="32"></label></div>
+      <div id="nList"></div>
+    </div>
+  </section>
+
+  <!-- gesprek -->
+  <section class="page" id="p-chat">
+    <div class="head"><button class="back"><i data-ic="back"></i></button><span class="avatar sm" id="cAvatar"></span><div class="htitle" id="cName"></div></div>
+    <div class="scroll" id="cScroll"><div id="cOlder" class="older" hidden>oudere berichten laden</div><div id="cMsgs"></div></div>
+    <div class="composer">
+      <textarea id="cText" class="tb" rows="1" placeholder="Typ een bericht" maxlength="4000"></textarea>
+      <button class="ab send" id="cSend"><i data-ic="send"></i></button>
+    </div>
+    <div class="appbar" id="chatBar">
+      <div class="abtns">
+        <button class="ab" id="cPhoto"><i data-ic="photo"></i><span>foto</span></button>
+        <button class="ab" id="cVideo"><i data-ic="video"></i><span>video</span></button>
+        <button class="ab more"><i data-ic="more"></i></button>
+      </div>
+      <div class="amenu">
+        <a data-act="toBottom">naar het laatste bericht</a>
+      </div>
+    </div>
+    <input type="file" id="fPhoto" accept="image/*" hidden>
+    <input type="file" id="fVideo" accept="video/*" hidden>
+    <input type="file" id="fPhotoCam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="fVideoCam" accept="video/*" capture="environment" hidden>
+  </section>
+
+  <!-- foto of video groot -->
+  <section class="page viewer" id="p-view">
+    <div class="vbody" id="vBody"></div>
+    <button class="vclose back"><i data-ic="close"></i></button>
+  </section>
+
+  <div id="toast"></div>
+  <div id="dialog" hidden><div class="dbox"><h2 id="dTitle"></h2><p id="dText"></p><div class="dbtns" id="dBtns"></div></div></div>
+</div>
+<script src="app.js?v=3"></script>
+</body>
+</html>

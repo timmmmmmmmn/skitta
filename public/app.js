@@ -767,6 +767,13 @@ function convTitle(conv) {
 
 const otherId = (conv) => conv.members.find((m) => m.id !== S.me.id)?.id;
 
+// Gesprek met iemand op Skitta Lite: die heeft geen sleutels, dus hier gaat alles onversleuteld.
+function plainConv(convId) {
+  const conv = S.convs.get(convId);
+  return !!conv && conv.kind === 'direct' && conv.members.some((m) => m.lite);
+}
+const PLAIN_MAX = 25 * 1024 * 1024;
+
 function directConvWith(id) {
   for (const c of S.convs.values()) if (c.kind === 'direct' && c.members.some((m) => m.id === id)) return c;
   return null;
@@ -1664,7 +1671,7 @@ async function openConv(id) {
 // Berichten van vóór de versleuteling: de afzender versleutelt ze zelf alsnog.
 async function encryptOld(convId) {
   const conv = S.convs.get(convId);
-  if (!conv || conv.left) return;
+  if (!conv || conv.left || plainConv(convId)) return;
   const old = bucket(convId).list.filter((m) => m.id && m.u === S.me.id && m.k === 'text' && !m.e && !m.del && !m.rm);
   for (const m of old) {
     try {
@@ -1721,17 +1728,18 @@ function renderHead() {
     const c = S.contacts.get(otherId(conv)) || userOf(otherId(conv));
     const st = statusClass(S.contacts.get(c.id));
     const canTalk = S.contacts.get(c.id)?.state === 'ok';
+    const lite = plainConv(conv.id);
     head.replaceChildren(
       back,
       h('button', { class: 'avatar-btn', style: { border: 0, padding: 0, background: 'none' }, onclick: () => contactProfile(c) }, avatar(c, 'lg')),
       h('div', { class: 'who' },
         h('h1', null, h('span', { class: `st ${st}` }), h('span', null, c.display_name)),
-        h('div', { class: 'sub' }, c.mood || ''),
+        h('div', { class: 'sub' }, lite ? 'Skitta Lite · niet versleuteld' : c.mood || ''),
         h('div', { class: 'sub2' }, statusLine(S.contacts.get(c.id)))),
       h('div', { class: 'actions' },
-        h('button', { class: 'sbtn blue', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, true), title: 'Videogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
-        h('button', { class: 'sbtn green', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, false), title: 'Bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
-        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: !canTalk, onclick: () => groupDialog([c.id]) }, svg('plus')),
+        h('button', { class: 'sbtn blue', disabled: !canTalk || inCall || lite, onclick: () => Call.start(c.id, true), title: 'Videogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
+        h('button', { class: 'sbtn green', disabled: !canTalk || inCall || lite, onclick: () => Call.start(c.id, false), title: 'Bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
+        h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: !canTalk || lite, onclick: () => groupDialog([c.id]) }, svg('plus')),
         moreButton(conv))
     );
   } else {
@@ -1851,7 +1859,11 @@ function renderMessages({ keepScroll = false } = {}) {
   chat.replaceChildren();
   chat.classList.toggle('group', conv.kind === 'group');
   if (b.loaded && b.more) chat.append(h('button', { class: 'btn more', onclick: () => loadOlder(conv.id) }, 'Eerdere berichten laden'));
-  if (b.loaded && !b.more) chat.append(h('div', { class: 'e2e-note' }, '🔒 Berichten en foto\'s in dit gesprek zijn end-to-end versleuteld. Alleen de mensen in dit gesprek kunnen ze lezen.'));
+  if (b.loaded && !b.more) {
+    chat.append(h('div', { class: 'e2e-note' }, plainConv(conv.id)
+      ? 'Dit gesprek is niet versleuteld: deze persoon gebruikt Skitta Lite (zonder sleutels). Bellen kan hier niet.'
+      : '🔒 Berichten en foto\'s in dit gesprek zijn end-to-end versleuteld. Alleen de mensen in dit gesprek kunnen ze lezen.'));
+  }
   if (!b.loaded) chat.append(h('div', { class: 'day' }, 'Laden…'));
   let lastDay = null;
   let prev = null;
@@ -2406,6 +2418,12 @@ async function sendFromCompose() {
     if (text === m.b) return;
     try {
       if (!text) return deleteMsg(m);
+      if (plainConv(m.c)) {
+        const out = await api('PATCH', `messages/${m.id}`, { body: text });
+        upsertMessage(out);
+        renderMessages({ keepScroll: true });
+        return;
+      }
       const sealed = await E2E.encrypt(m.c, text);
       const out = await api('PATCH', `messages/${m.id}`, { body: sealed.body, enc: 1 });
       Object.assign(out, { raw: out.b, b: text, mk: sealed.mk });
@@ -2442,9 +2460,14 @@ async function sendText(convId, text, existing) {
   if (!existing) bucket(convId).list.push(local);
   if (S.cur === convId) renderMessages();
   try {
-    const sealed = await E2E.encrypt(convId, text);
-    const m = await api('POST', `conversations/${convId}/messages`, { body: sealed.body, enc: 1, client_id: cid });
-    Object.assign(m, { raw: m.b, b: text, mk: sealed.mk });
+    let m;
+    if (plainConv(convId)) {
+      m = await api('POST', `conversations/${convId}/messages`, { body: text, client_id: cid });
+    } else {
+      const sealed = await E2E.encrypt(convId, text);
+      m = await api('POST', `conversations/${convId}/messages`, { body: sealed.body, enc: 1, client_id: cid });
+      Object.assign(m, { raw: m.b, b: text, mk: sealed.mk });
+    }
     upsertMessage(m);
     const conv = S.convs.get(convId);
     if (conv) { conv.last = m; conv.last_at = m.at; conv.last_read = m.id; }
@@ -2624,6 +2647,13 @@ async function sendFile(convId, file, extra = {}, existing) {
     local.h = hgt;
     local.progress = 'Versturen…';
     if (S.cur === convId) renderMessages({ keepScroll: true });
+    if (plainConv(convId)) {
+      await sendPlain(convId, blob, meta, local, cid, w, hgt, file);
+      Sound.play('FT_COMPLETE');
+      if (S.cur === convId) renderMessages({ keepScroll: true });
+      renderList();
+      return;
+    }
     if (blob.size > (S.me.big_files || Infinity)) {
       await sendBig(convId, blob, meta, local, cid);
       Sound.play('FT_COMPLETE');
@@ -2656,6 +2686,37 @@ async function sendFile(convId, file, extra = {}, existing) {
   }
   if (S.cur === convId) renderMessages({ keepScroll: true });
   renderList();
+}
+
+// Bijlage in een gesprek met Skitta Lite: onversleuteld (tot 25 MB, met voortgang).
+async function sendPlain(convId, blob, meta, local, cid, w, hgt, file) {
+  if (blob.size > PLAIN_MAX) throw new Error('Bijlagen voor Skitta Lite mogen maximaal 25 MB zijn');
+  const form = new FormData();
+  form.append('file', blob, meta.name || 'bijlage');
+  form.append('meta', JSON.stringify(meta));
+  form.append('w', String(w || 0));
+  form.append('h', String(hgt || 0));
+  form.append('cid', cid);
+  const m = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/conversations/${convId}/plain`);
+    xhr.upload.onprogress = (e) => {
+      const el = document.querySelector(`[data-cid="${cid}"] .progress`);
+      if (el && e.lengthComputable) el.textContent = `Versturen… ${Math.round((e.loaded / e.total) * 100)}%`;
+    };
+    xhr.onload = () => {
+      let res = {};
+      try { res = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(res);
+      else reject(new ApiError(xhr.status, res.error || 'De bijlage kon niet worden verstuurd'));
+    };
+    xhr.onerror = () => reject(new Error('Geen verbinding'));
+    xhr.send(form);
+  });
+  const localUrl = blob === file ? local.localUrl : URL.createObjectURL(blob);
+  upsertMessage({ ...m, localUrl });
+  const conv = S.convs.get(convId);
+  if (conv) { conv.last = m; conv.last_at = m.at; }
 }
 
 // Grote bijlage: versleutelen in stukken, uploaden naar de eigen bestandsserver, dan het bericht sturen.
@@ -5330,6 +5391,7 @@ const Call = {
     if (this.active || this.incoming || GroupCall.active) return toastError('Je bent al in gesprek');
     const contact = S.contacts.get(peer);
     if (contact?.state !== 'ok') return;
+    if (contact.lite) return alertDialog('Bellen', `${contact.display_name} gebruikt Skitta Lite. Daarmee kun je niet bellen, alleen chatten.`);
     if (!S.ws || S.ws.readyState !== 1) return toastError('Geen verbinding met Skitta');
     let conv = directConvWith(peer);
     if (!conv) {

@@ -1,0 +1,277 @@
+/* Skitta Lite — Windows 10 Mobile-stijl. Geschreven voor Edge 14 (Lumia): geen CSS-variabelen, geen grid,
+   geen gap. Donker is de basis; body.light zet het lichte thema. De accentkleur komt uit app.js (#accentCss). */
+
+[hidden] { display: none !important; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  background: #000; color: #fff;
+  font-family: "Segoe UI", "Segoe WP", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px; line-height: 1.33;
+  -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;
+  -webkit-user-select: none; -ms-user-select: none; user-select: none;
+  -ms-touch-action: manipulation; touch-action: manipulation;
+}
+a { color: inherit; text-decoration: none; cursor: pointer; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; outline: none; }
+input, textarea { font: inherit; }
+h3 { font-weight: 400; font-size: 20px; margin: 22px 0 8px; }
+p { margin: 0 0 10px; }
+.sub { color: #999; }
+.small { font-size: 12px; }
+svg { display: block; }
+
+#app { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; }
+
+/* ---------- pagina's ---------- */
+.page {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  display: none; background: #000;
+}
+.page.on { display: block; }
+.page.enter { -webkit-animation: enter .22s cubic-bezier(.1, .9, .2, 1); animation: enter .22s cubic-bezier(.1, .9, .2, 1); }
+@-webkit-keyframes enter { from { opacity: 0; -webkit-transform: translateY(60px); } to { opacity: 1; -webkit-transform: none; } }
+@keyframes enter { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: none; } }
+
+.scroll {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+  overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+}
+.pad { padding: 0 19px 24px; }
+
+.apptitle { font-size: 13px; font-weight: 600; letter-spacing: .5px; padding: 12px 0 0; }
+.big { font-weight: 300; font-size: 42px; line-height: 1.1; margin: 4px 0 20px; }
+
+/* ---------- inloggen ---------- */
+#p-login .scroll { padding-top: 0; padding-top: env(safe-area-inset-top, 0px); }
+.field { display: block; margin: 0 0 14px; }
+.field span { display: block; font-size: 15px; margin-bottom: 5px; color: #fff; }
+.err { color: #ff5c5c; min-height: 20px; }
+.hint { margin-top: 18px; }
+.hint a { text-decoration: underline; }
+
+/* TextBox zoals op Windows 10 Mobile: rand, bij focus wit met een accentrand */
+.tb {
+  display: block; width: 100%; height: 34px; margin: 0; padding: 4px 9px;
+  background: rgba(0, 0, 0, .4); color: #fff;
+  border: 2px solid rgba(255, 255, 255, .4); border-radius: 0;
+  outline: none; -webkit-appearance: none; appearance: none;
+  font-size: 16px; -webkit-user-select: text; -ms-user-select: text; user-select: text;
+}
+.tb:hover { border-color: rgba(255, 255, 255, .6); }
+.tb:focus { background: #fff; color: #000; }
+.tb::-webkit-input-placeholder { color: #999; }
+.tb:-ms-input-placeholder { color: #999; }
+.tb::placeholder { color: #999; }
+.tb::-ms-clear, .tb::-ms-reveal { display: none; }
+
+.btn {
+  display: inline-block; min-width: 120px; height: 34px; padding: 4px 12px;
+  background: rgba(255, 255, 255, .2); border: 2px solid transparent; color: #fff;
+  text-align: center; line-height: 22px; font-size: 15px;
+}
+.btn:active { background: rgba(255, 255, 255, .4); }
+.btn.primary { color: #fff; }
+.btn[disabled] { opacity: .45; }
+
+/* ---------- pivot ---------- */
+.pivothead { position: absolute; left: 0; right: 0; top: 0; padding: 0 0 0 12px; padding-top: env(safe-area-inset-top, 0px); height: 86px; height: calc(86px + env(safe-area-inset-top, 0px)); overflow: hidden; }
+.pivothead .apptitle { padding-left: 7px; }
+.pivots { white-space: nowrap; overflow: hidden; height: 54px; }
+.pv { display: inline-block; font-size: 28px; font-weight: 400; padding: 6px 7px 0; color: rgba(255, 255, 255, .45); }
+.pv.on { color: #fff; }
+.pivotbody { position: absolute; left: 0; right: 0; top: 86px; top: calc(86px + env(safe-area-inset-top, 0px)); bottom: 48px; bottom: calc(48px + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
+.pitem.slide { -webkit-animation: slide .25s cubic-bezier(.1, .9, .2, 1); animation: slide .25s cubic-bezier(.1, .9, .2, 1); }
+.pitem.slideback { -webkit-animation: slideback .25s cubic-bezier(.1, .9, .2, 1); animation: slideback .25s cubic-bezier(.1, .9, .2, 1); }
+@-webkit-keyframes slide { from { opacity: 0; -webkit-transform: translateX(80px); } to { opacity: 1; -webkit-transform: none; } }
+@keyframes slide { from { opacity: 0; transform: translateX(80px); } to { opacity: 1; transform: none; } }
+@-webkit-keyframes slideback { from { opacity: 0; -webkit-transform: translateX(-80px); } to { opacity: 1; -webkit-transform: none; } }
+@keyframes slideback { from { opacity: 0; transform: translateX(-80px); } to { opacity: 1; transform: none; } }
+
+/* ---------- chatlijst ---------- */
+.row { display: -webkit-box; display: -webkit-flex; display: -ms-flexbox; display: flex; -webkit-align-items: center; -ms-flex-align: center; align-items: center; padding: 8px 19px; min-height: 66px; }
+.row:active { background: rgba(255, 255, 255, .1); }
+.row .txt { -webkit-flex: 1; -ms-flex: 1; flex: 1; min-width: 0; margin-left: 12px; }
+.row .name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .prev { font-size: 14px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .time { font-size: 12px; color: #999; margin-left: 8px; -ms-flex-item-align: start; -webkit-align-self: flex-start; align-self: flex-start; padding-top: 4px; }
+.row .count { display: inline-block; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px; font-size: 12px; line-height: 20px; text-align: center; color: #fff; }
+.empty { padding: 24px 19px; color: #999; font-size: 15px; }
+
+.avatar {
+  display: block; width: 48px; height: 48px; border-radius: 50%; -webkit-flex: none; -ms-flex: none; flex: none;
+  text-align: center; line-height: 48px; font-size: 20px; color: #fff; text-transform: uppercase;
+}
+.avatar.sm { width: 32px; height: 32px; line-height: 32px; font-size: 14px; margin-right: 10px; }
+
+/* ---------- app bar ---------- */
+.appbar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+  background: #1f1f1f; padding-bottom: 0; padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.abtns { height: 48px; text-align: right; white-space: nowrap; padding-right: 4px; }
+.ab { display: inline-block; vertical-align: top; width: 68px; height: 48px; text-align: center; padding-top: 14px; overflow: hidden; }
+.ab i { display: block; width: 20px; height: 20px; margin: 0 auto; }
+.ab span { display: none; font-size: 12px; line-height: 14px; margin-top: 4px; }
+.ab.more { width: 44px; }
+.ab:active { background: rgba(255, 255, 255, .15); }
+.appbar.open .abtns { height: 66px; }
+.appbar.open .ab span { display: block; }
+.amenu { display: none; padding: 4px 0 10px; }
+.appbar.open .amenu { display: block; }
+.amenu a { display: block; padding: 10px 19px; font-size: 17px; }
+.amenu a:active { background: rgba(255, 255, 255, .1); }
+#shade { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 4; background: rgba(0, 0, 0, .4); display: none; }
+#shade.on { display: block; }
+
+/* ---------- kopbalk (nieuwe chat, gesprek) ---------- */
+.head {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 3;
+  height: 48px; height: calc(48px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px);
+  background: #1f1f1f;
+  display: -webkit-box; display: -webkit-flex; display: -ms-flexbox; display: flex; -webkit-align-items: center; -ms-flex-align: center; align-items: center;
+}
+.head + .scroll { top: 48px; top: calc(48px + env(safe-area-inset-top, 0px)); }
+.back { width: 48px; height: 48px; -webkit-flex: none; -ms-flex: none; flex: none; }
+.back i { display: block; width: 20px; height: 20px; margin: 0 auto; }
+.back:active { background: rgba(255, 255, 255, .15); }
+.htitle { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-flex: 1; -ms-flex: 1; flex: 1; }
+html.lumia .head .back { display: none; }
+html.lumia .head { padding-left: 19px; }
+
+/* ---------- gesprek ---------- */
+#cScroll { top: 48px; top: calc(48px + env(safe-area-inset-top, 0px)); bottom: 102px; bottom: calc(102px + env(safe-area-inset-bottom, 0px)); padding: 8px 0 6px; }
+.older { text-align: center; color: #999; padding: 8px; font-size: 13px; }
+.day { text-align: center; color: #999; font-size: 12px; padding: 12px 0 4px; }
+.msg { padding: 3px 12px 3px 19px; overflow: hidden; }
+.msg.out { padding: 3px 19px 3px 12px; text-align: right; }
+.bubble {
+  position: relative; display: inline-block; max-width: 80%; text-align: left;
+  padding: 7px 10px 8px; margin-bottom: 9px; font-size: 15px;
+  white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; -ms-word-break: break-word; word-break: break-word;
+  -webkit-user-select: text; -ms-user-select: text; user-select: text;
+  background: #333;
+}
+/* het staartje zoals in Berichten op Windows 10 Mobile */
+.bubble:after { content: ""; position: absolute; bottom: -9px; width: 0; height: 0; border-style: solid; }
+.msg.in .bubble:after { left: 0; border-width: 9px 12px 0 0; border-color: #333 transparent transparent transparent; }
+.msg.out .bubble:after { right: 0; border-width: 0 0 0 0; border-width: 9px 0 0 12px; }
+.bubble .meta { display: block; font-size: 11px; opacity: .7; margin-top: 3px; text-align: right; }
+.bubble.media { padding: 3px; }
+.bubble.media .meta { padding: 0 4px 1px; }
+.thumb { position: relative; display: block; background: #222; overflow: hidden; cursor: pointer; }
+.thumb img { display: block; width: 100%; height: 100%; }
+.thumb .play {
+  position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px;
+  border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, .45); padding: 12px 11px 12px 15px;
+}
+.thumb .play i { display: block; width: 18px; height: 20px; }
+.gone { font-style: italic; opacity: .8; padding: 6px 8px; }
+.bar { height: 4px; background: rgba(255, 255, 255, .25); margin: 6px 4px 2px; }
+.bar i { display: block; height: 4px; width: 0; background: #fff; }
+.cap { padding: 4px 6px 0; white-space: pre-wrap; }
+.bubble .file { text-decoration: underline; }
+.failed { color: #ffb3b3; font-size: 12px; padding: 2px 4px; cursor: pointer; }
+.pending { opacity: .7; }
+
+.composer {
+  position: absolute; left: 0; right: 0; bottom: 48px; bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  height: 54px; padding: 10px 64px 10px 12px; background: #000;
+}
+/* geen flex: Edge 14 (Lumia) liet het tekstveld met width 100% over de verstuurknop heen lopen */
+.composer .tb { width: 100%; height: 34px; resize: none; overflow: hidden; line-height: 22px; padding: 4px 9px; }
+.composer .send { position: absolute; right: 6px; bottom: 10px; width: 52px; height: 34px; padding-top: 7px; }
+
+/* ---------- viewer ---------- */
+.viewer { background: #000; z-index: 20; }
+.vbody { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+.vbody video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; }
+/* geen object-fit in Edge 14: centreren met max-maten */
+.vbody img { position: absolute; left: 50%; top: 50%; max-width: 100%; max-height: 100%; -webkit-transform: translate(-50%, -50%); -ms-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+.vclose { position: absolute; right: 6px; top: 6px; top: calc(6px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; background: rgba(0, 0, 0, .5); }
+.vclose i { display: block; width: 18px; height: 18px; margin: 0 auto; }
+html.lumia .vclose { display: none; }
+
+/* ---------- instellingen ---------- */
+.radio { display: block; position: relative; padding: 7px 0 7px 32px; font-size: 15px; cursor: pointer; }
+.radio input { position: absolute; opacity: 0; left: 0; top: 0; }
+.radio i { position: absolute; left: 0; top: 7px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; }
+.radio input:checked + i:after { content: ""; position: absolute; left: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.accents { overflow: hidden; margin-right: -4px; max-width: 336px; }
+.accents a { float: left; width: 38px; height: 38px; margin: 0 4px 4px 0; border: 2px solid transparent; }
+.accents a.on { border-color: #fff; }
+#getApp .btn { margin-bottom: 6px; }
+
+/* ---------- melding bovenaan (toast) ---------- */
+#toast {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 30; display: none;
+  padding: 10px 19px; padding-top: 10px; padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: #2b2b2b; font-size: 14px; cursor: pointer;
+}
+#toast.on { display: block; -webkit-animation: drop .25s ease-out; animation: drop .25s ease-out; }
+#toast b { display: block; font-size: 15px; }
+@-webkit-keyframes drop { from { -webkit-transform: translateY(-100%); } to { -webkit-transform: none; } }
+@keyframes drop { from { transform: translateY(-100%); } to { transform: none; } }
+
+/* ---------- dialoog (ContentDialog) ---------- */
+#dialog { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 40; background: rgba(0, 0, 0, .6); }
+.dbox { background: #2b2b2b; padding: 18px 19px 19px; padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
+.dbox h2 { font-size: 20px; font-weight: 400; margin: 0 0 10px; }
+.dbtns { margin-top: 18px; display: -webkit-box; display: -webkit-flex; display: -ms-flexbox; display: flex; }
+.dbtns .btn { -webkit-flex: 1; -ms-flex: 1; flex: 1; min-width: 0; margin-right: 8px; }
+.dbtns .btn:last-child { margin-right: 0; }
+
+/* ---------- voortgangsbalk (de vijf puntjes) ---------- */
+#progress { position: absolute; left: 0; right: 0; top: 0; top: env(safe-area-inset-top, 0px); height: 4px; z-index: 50; overflow: hidden; display: none; pointer-events: none; }
+#progress.on { display: block; }
+#progress i { position: absolute; top: 0; left: 0; width: 4px; height: 4px; border-radius: 50%; -webkit-animation: dots 2.4s infinite; animation: dots 2.4s infinite; }
+#progress i:nth-child(2) { -webkit-animation-delay: .15s; animation-delay: .15s; }
+#progress i:nth-child(3) { -webkit-animation-delay: .3s; animation-delay: .3s; }
+#progress i:nth-child(4) { -webkit-animation-delay: .45s; animation-delay: .45s; }
+#progress i:nth-child(5) { -webkit-animation-delay: .6s; animation-delay: .6s; }
+@-webkit-keyframes dots {
+  0% { -webkit-transform: translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  35% { -webkit-transform: translateX(45vw); }
+  65% { -webkit-transform: translateX(55vw); }
+  90% { opacity: 1; }
+  100% { -webkit-transform: translateX(100vw); opacity: 0; }
+}
+@keyframes dots {
+  0% { transform: translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  35% { transform: translateX(45vw); }
+  65% { transform: translateX(55vw); }
+  90% { opacity: 1; }
+  100% { transform: translateX(100vw); opacity: 0; }
+}
+
+/* ---------- licht thema ---------- */
+body.light { background: #fff; color: #000; }
+body.light .page { background: #fff; }
+body.light .viewer { background: #000; color: #fff; }
+body.light .sub, body.light .row .prev, body.light .row .time, body.light .day, body.light .older, body.light .empty { color: #666; }
+body.light .field span { color: #000; }
+body.light .tb { background: rgba(255, 255, 255, .4); color: #000; border-color: rgba(0, 0, 0, .4); }
+body.light .tb:hover { border-color: rgba(0, 0, 0, .6); }
+body.light .tb:focus { background: #fff; }
+body.light .btn { background: rgba(0, 0, 0, .2); color: #000; }
+body.light .btn:active { background: rgba(0, 0, 0, .4); }
+body.light .btn.primary { color: #fff; }
+body.light .pv { color: rgba(0, 0, 0, .4); }
+body.light .pv.on { color: #000; }
+body.light .row:active, body.light .amenu a:active { background: rgba(0, 0, 0, .08); }
+body.light .appbar, body.light .head { background: #f2f2f2; }
+body.light .ab:active, body.light .back:active { background: rgba(0, 0, 0, .1); }
+body.light .composer { background: #fff; }
+body.light .bubble { background: #e6e6e6; }
+body.light .msg.in .bubble:after { border-color: #e6e6e6 transparent transparent transparent; }
+body.light .bar { background: rgba(0, 0, 0, .2); }
+body.light .radio i { border-color: #000; }
+body.light .radio input:checked + i:after { background: #000; }
+body.light .accents a.on { border-color: #000; }
+body.light #toast, body.light .dbox { background: #e6e6e6; }
+body.light .err { color: #c50f1f; }
+body.light .thumb { background: #ddd; }
+body.light .failed { color: #c50f1f; }

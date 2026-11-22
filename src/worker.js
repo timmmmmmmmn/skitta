@@ -10,6 +10,7 @@ import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport 
 import { pushTo, vapidPublicKey } from './push.js';
 import { BIG, uploadTicket, downloadTicket } from './bigfiles.js';
 import { gifSearch, gifMedia } from './gifs.js';
+import { liteRegister, liteLogin, liteChats, liteStart, sendPlainFile, LITE_CSP } from './lite.js';
 
 export { Hub };
 
@@ -44,7 +45,7 @@ async function setting(env, key, fallback = '') {
 function publicUser(u, presence) {
   return {
     id: u.id, username: u.username, display_name: u.display_name, mood: u.mood || '',
-    avatar: u.avatar_id || null, ...(presence !== undefined ? { presence } : {})
+    avatar: u.avatar_id || null, ...(u.lite ? { lite: true } : {}), ...(presence !== undefined ? { presence } : {})
   };
 }
 
@@ -174,7 +175,8 @@ async function login(env, request) {
   if (await tooManyAttempts(env, `login|${ip}`, 20, 900e3) || await tooManyAttempts(env, `login|${id}`, 10, 900e3)) {
     throw new HttpError(429, 'Te veel mislukte pogingen. Wacht een kwartier en probeer het opnieuw.');
   }
-  const user = await env.DB.prepare('SELECT id, password_hash, status, kdf_v FROM users WHERE username = ? OR email = ?').bind(id, id).first();
+  const user = await env.DB.prepare('SELECT id, password_hash, status, kdf_v, lite FROM users WHERE username = ? OR email = ?').bind(id, id).first();
+  if (user?.lite) throw new HttpError(403, 'Dit is een Skitta Lite-account. Log in op skittalite.timvanbergen.nl.');
   const secret = user?.kdf_v === 0 ? b.password : b.auth;
   if (!user || !(await verifyPassword(String(secret ?? ''), user.password_hash))) {
     await recordAttempt(env, `login|${ip}`);
@@ -289,9 +291,9 @@ async function readEncrypted(env, request) {
 }
 
 // Nieuwe bijlagen gaan altijd naar R2 (D1 is alleen nog voor oude foto's van vóór R2).
-async function mediaStore(env, uid, id, img) {
+async function mediaStore(env, uid, id, img, opts) {
   if (!env.MEDIA) throw new HttpError(503, 'Bijlagen versturen kan nu niet');
-  await checkUpload(env, uid, img.buf.length);
+  await checkUpload(env, uid, img.buf.length, opts);
   await env.MEDIA.put(`media/${id}`, img.buf, { httpMetadata: { contentType: img.mime } });
   await env.DB.batch([bump(env, usageKey.write()), bump(env, usageKey.upload(uid), img.buf.length)]);
 }
@@ -326,24 +328,32 @@ async function r2Bytes(env, id) {
   return bytes;
 }
 
-async function mediaResponse(env, row, cache = 'private, max-age=31536000, immutable') {
+async function mediaResponse(env, row, cache = 'private, max-age=31536000, immutable', range = null) {
   let data = row.data;
   if (row.in_r2) {
     data = await r2Bytes(env, row.id);
   } else if (Array.isArray(data)) {
     data = new Uint8Array(data);
   }
-  return new Response(data, {
-    headers: {
-      'content-type': row.mime, 'cache-control': cache, 'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'"
-    }
-  });
+  const headers = {
+    'content-type': row.mime, 'cache-control': cache, 'x-content-type-options': 'nosniff', 'accept-ranges': 'bytes',
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'"
+  };
+  // Een stuk van het bestand (video's: de iPhone speelt ze alleen zo af). Het hele bestand komt uit de cache.
+  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (m && data?.length) {
+    const size = data.length;
+    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start > end || start >= size) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    return new Response(data.slice(start, end + 1), { status: 206, headers: { ...headers, 'content-range': `bytes ${start}-${end}/${size}` } });
+  }
+  return new Response(data, { headers });
 }
 
 // Profielfoto's mag iedereen zien; een foto in een gesprek alleen de leden, en alleen zolang het
 // bericht nog bestaat (een verwijderde of afgekeurde foto blijft alleen voor de beheerder bewaard).
-async function getMedia(env, user, id) {
+async function getMedia(env, user, id, range) {
   const row = await env.DB.prepare(
     `SELECT m.* FROM media m
       WHERE m.id = ? AND (m.conversation_id IS NULL OR (
@@ -351,7 +361,7 @@ async function getMedia(env, user, id) {
         AND EXISTS (SELECT 1 FROM messages y WHERE y.media_id = m.id)))`
   ).bind(id, user.id).first();
   if (!row) throw new HttpError(404, 'Niet gevonden');
-  return mediaResponse(env, row);
+  return mediaResponse(env, row, undefined, range);
 }
 
 async function setAvatar(env, user, request) {
@@ -432,7 +442,7 @@ async function pushUnsubscribe(env, user, request) {
 
 async function listContacts(env, user) {
   const { results } = await env.DB.prepare(
-    `SELECT c.state, c.message, c.created_at AS since, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.presence, u.last_seen
+    `SELECT c.state, c.message, c.created_at AS since, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.presence, u.last_seen, u.lite
        FROM contacts c JOIN users u ON u.id = c.contact_id
       WHERE c.user_id = ? AND u.status = 'active'`
   ).bind(user.id).all();
@@ -450,7 +460,7 @@ async function searchUsers(env, user, url) {
   if (q.length < 2) return json([]);
   const like = `%${q.replace(/[%_\\]/g, (c) => '\\' + c)}%`;
   const { results } = await env.DB.prepare(
-    `SELECT id, username, display_name, mood, avatar_id FROM users
+    `SELECT id, username, display_name, mood, avatar_id, lite FROM users
       WHERE status = 'active' AND id != ? AND (username LIKE ? ESCAPE '\\' OR LOWER(display_name) LIKE ? ESCAPE '\\' OR email = ?)
       ORDER BY username = ? DESC, display_name LIMIT 20`
   ).bind(user.id, like, like, q, q).all();
@@ -463,7 +473,7 @@ async function contactRow(env, a, b) {
 
 async function addContact(env, user, request) {
   const b = await body(request);
-  const other = await env.DB.prepare("SELECT id FROM users WHERE (id = ? OR username = ?) AND status = 'active'")
+  const other = await env.DB.prepare("SELECT id, lite FROM users WHERE (id = ? OR username = ?) AND status = 'active'")
     .bind(Number(b.user_id) || 0, str(b.username, 32).toLowerCase()).first();
   if (!other) throw new HttpError(404, 'Deze persoon bestaat niet');
   if (other.id === user.id) throw new HttpError(400, 'Je kunt jezelf niet toevoegen');
@@ -473,6 +483,11 @@ async function addContact(env, user, request) {
   const t = now();
   const message = str(b.message, 300) || 'Hallo, ik wil je graag toevoegen aan mijn lijst met contactpersonen.';
   if (mine?.state === 'in') return acceptContact(env, user, other.id);
+  // Skitta Lite heeft geen verzoeken: wie een Lite-gebruiker toevoegt, is meteen contact.
+  if (other.lite && theirs?.state !== 'blocked') {
+    await makeContacts(env, user.id, other.id);
+    return json({ state: 'ok' }, 201);
+  }
   if (await tooManyAttempts(env, `contact|${user.id}`, 30, 3600e3)) throw new HttpError(429, 'Te veel verzoeken, probeer het later opnieuw');
   await recordAttempt(env, `contact|${user.id}`);
   const stmts = [
@@ -511,6 +526,19 @@ async function acceptContact(env, user, otherId) {
   await hub(env).presenceChanged(user.id);
   await hub(env).presenceChanged(otherId);
   return json({ state: 'ok' });
+}
+
+// Meteen wederzijds contact (Skitta Lite), met de meldingen die bij accepteren horen.
+async function makeContacts(env, a, b) {
+  const t = now();
+  const up = (x, y) => env.DB.prepare(
+    "INSERT INTO contacts (user_id, contact_id, state, created_at) VALUES (?, ?, 'ok', ?) ON CONFLICT DO UPDATE SET state = 'ok', message = ''"
+  ).bind(x, y, t);
+  await env.DB.batch([up(a, b), up(b, a)]);
+  await hub(env).notify([a], { t: 'contacts', accepted: b });
+  await hub(env).notify([b], { t: 'contacts', accepted: a });
+  await hub(env).presenceChanged(a);
+  await hub(env).presenceChanged(b);
 }
 
 async function removeContact(env, user, otherId) {
@@ -585,7 +613,7 @@ async function conversationsFor(env, user, onlyId) {
   const marks = ids.map(() => '?').join(',');
   const [members, lasts, keyed] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.pubkey, u.read_receipts
+      `SELECT m.conversation_id, m.left_at, m.last_read, u.id, u.username, u.display_name, u.mood, u.avatar_id, u.pubkey, u.read_receipts, u.lite
          FROM members m JOIN users u ON u.id = m.user_id WHERE m.conversation_id IN (${marks})`
     ).bind(...ids),
     env.DB.prepare(
@@ -682,22 +710,36 @@ async function isContact(env, a, b) {
   return (await contactRow(env, a, b))?.state === 'ok';
 }
 
+// Het gesprek tussen twee mensen (bestaand of nieuw).
+async function directConversation(env, a, b) {
+  const t = now();
+  const key = [a, b].sort((x, y) => x - y).join(':');
+  let conv = await env.DB.prepare('SELECT id FROM conversations WHERE direct_key = ?').bind(key).first();
+  if (!conv) {
+    conv = await env.DB.prepare(
+      "INSERT INTO conversations (kind, direct_key, created_by, created_at, last_at) VALUES ('direct', ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id"
+    ).bind(key, a, t, t).first() || await env.DB.prepare('SELECT id FROM conversations WHERE direct_key = ?').bind(key).first();
+    await env.DB.batch([a, b].map((uid) =>
+      env.DB.prepare('INSERT INTO members (conversation_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').bind(conv.id, uid, t)
+    ));
+  }
+  return conv;
+}
+
+// Groepen zijn versleuteld; Skitta Lite-gebruikers kunnen daar niet in.
+async function noLiteInGroup(env, ids) {
+  if (!ids.length) return;
+  const row = await env.DB.prepare(`SELECT display_name FROM users WHERE lite = 1 AND id IN (${ids.map(() => '?').join(',')})`).bind(...ids).first();
+  if (row) throw new HttpError(400, `${row.display_name} gebruikt Skitta Lite en kan niet in een groep`);
+}
+
 async function createConversation(env, user, request) {
   const b = await body(request);
   const t = now();
   if (b.user_id) {
     const other = Number(b.user_id);
     if (!(await isContact(env, user.id, other))) throw new HttpError(403, 'Je kunt alleen chatten met je contactpersonen');
-    const key = [user.id, other].sort((x, y) => x - y).join(':');
-    let conv = await env.DB.prepare('SELECT id FROM conversations WHERE direct_key = ?').bind(key).first();
-    if (!conv) {
-      conv = await env.DB.prepare(
-        "INSERT INTO conversations (kind, direct_key, created_by, created_at, last_at) VALUES ('direct', ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id"
-      ).bind(key, user.id, t, t).first() || await env.DB.prepare('SELECT id FROM conversations WHERE direct_key = ?').bind(key).first();
-      await env.DB.batch([user.id, other].map((uid) =>
-        env.DB.prepare('INSERT INTO members (conversation_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').bind(conv.id, uid, t)
-      ));
-    }
+    const conv = await directConversation(env, user.id, other);
     const [out] = await conversationsFor(env, user, conv.id);
     return json(out);
   }
@@ -707,6 +749,7 @@ async function createConversation(env, user, request) {
   if (!ids.length) throw new HttpError(400, 'Kies minstens één contactpersoon');
   if (ids.length + 1 > MAX_GROUP) throw new HttpError(400, `Een groep kan maximaal ${MAX_GROUP} personen hebben`);
   for (const id of ids) if (!(await isContact(env, user.id, id))) throw new HttpError(403, 'Je kunt alleen contactpersonen toevoegen');
+  await noLiteInGroup(env, ids);
   const topic = str(b.topic, 100);
   const conv = await env.DB.prepare(
     "INSERT INTO conversations (kind, topic, created_by, created_at, last_at) VALUES ('group', ?, ?, ?, ?) RETURNING id"
@@ -793,6 +836,7 @@ async function addMembers(env, user, convId, request) {
   if (!ids.length) return json({ ok: true });
   if (current.length + ids.length > MAX_GROUP) throw new HttpError(400, `Een groep kan maximaal ${MAX_GROUP} personen hebben`);
   for (const id of ids) if (!(await isContact(env, user.id, id))) throw new HttpError(403, 'Je kunt alleen contactpersonen toevoegen');
+  await noLiteInGroup(env, ids);
   const t = now();
   await env.DB.batch([
     ...ids.map((uid) => env.DB.prepare(
@@ -1362,6 +1406,8 @@ async function route(request, env, url) {
     await destroySession(env, request);
     return json({ ok: true }, 200, { 'set-cookie': clearSessionCookie() });
   }
+  if (p === 'lite/register' && m === 'POST') return liteRegister(env, request);
+  if (p === 'lite/login' && m === 'POST') return liteLogin(env, request);
   if (p === 'config' && m === 'GET') return json({ registration: await setting(env, 'registration', 'open') });
 
   const user = await sessionUser(env, request);
@@ -1384,7 +1430,7 @@ async function route(request, env, url) {
     if (b === 'avatar' && m === 'PUT') return setAvatar(env, user, request);
     if (b === 'avatar' && m === 'DELETE') return removeAvatar(env, user);
   }
-  if (a === 'media' && b && m === 'GET') return getMedia(env, user, b);
+  if (a === 'media' && b && m === 'GET') return getMedia(env, user, b, request.headers.get('range'));
   if (a === 'ice' && m === 'GET') return iceServers(env);
   if (p === 'usage/turn' && m === 'POST') return reportTurn(env, user, request);
   if (p === 'push/key' && m === 'GET') return json({ key: await vapidPublicKey(env) });
@@ -1397,6 +1443,8 @@ async function route(request, env, url) {
   if (p === 'gif/media' && m === 'GET') return gifMedia(url);
 
   if (a === 'users' && b === 'search' && m === 'GET') return searchUsers(env, user, url);
+  if (p === 'lite/chats' && m === 'GET') return liteChats(env, user);
+  if (p === 'lite/chats' && m === 'POST') return liteStart(env, user, request);
 
   if (a === 'contacts') {
     if (!b && m === 'GET') return listContacts(env, user);
@@ -1414,6 +1462,7 @@ async function route(request, env, url) {
     if (id && c === 'messages' && m === 'GET') return listMessages(env, user, id, url);
     if (id && c === 'messages' && m === 'POST') return sendMessage(env, user, id, request);
     if (id && c === 'photo' && m === 'POST') return sendPhoto(env, user, id, request, url);
+    if (id && c === 'plain' && m === 'POST') return sendPlainFile(env, user, id, request);
     if (id && c === 'read' && m === 'POST') return markRead(env, user, id, request);
     if (id && c === 'keys' && m === 'POST') return putKeys(env, user, id, request);
     if (id && c === 'me' && m === 'PATCH') return myConvSettings(env, user, id, request);
@@ -1476,10 +1525,23 @@ export default {
         return json({ error: 'Er ging iets mis op de server' }, 500);
       }
     }
+    if (url.hostname.startsWith('skittalite.')) {
+      if (!url.pathname.startsWith('/lite/')) url.pathname = '/lite' + url.pathname;
+      const res = await env.ASSETS.fetch(new Request(url, request));
+      const out = new Response(res.body, res);
+      out.headers.set('content-security-policy', LITE_CSP);
+      return out;
+    }
     return env.ASSETS.fetch(request);
   },
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanupExpired(env));
   }
+};
+
+// Voor Skitta Lite (src/lite.js).
+export {
+  body, str, setting, hub, later, conversationsFor, contactRow, makeContacts, directConversation, memberOf, canMessage,
+  activeMemberIds, mediaInsert, mediaStore, sniffImage, msgOut, pushMessage
 };

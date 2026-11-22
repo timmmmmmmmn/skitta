@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Belliechat" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:colorAccent">#0078D7</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
