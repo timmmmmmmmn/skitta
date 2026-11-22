@@ -10,7 +10,7 @@ import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport 
 import { pushTo, vapidPublicKey } from './push.js';
 import { BIG, uploadTicket, downloadTicket } from './bigfiles.js';
 import { gifSearch, gifMedia } from './gifs.js';
-import { liteRegister, liteLogin, liteChats, liteStart, sendPlainFile, liteCsp } from './lite.js';
+import { liteRegister, liteLogin, liteChats, liteStart, sendPlainFile, liteCsp, noEncForLite, unsealMessage } from './lite.js';
 
 export { Hub };
 
@@ -904,6 +904,7 @@ async function sendMessage(env, user, convId, request) {
   let text;
   const enc = kind === 'text' && b.enc ? 1 : 0;
   if (enc) {
+    await noEncForLite(env, conv);
     text = checkEnvelope(b.body, conv);
   } else if (kind === 'call') {
     const dur = Math.max(0, Math.min(86400, Math.round(Number(b.duration) || 0)));
@@ -934,6 +935,7 @@ async function sendPhoto(env, user, convId, request, url) {
   await canMessage(env, user, conv);
   if (await tooManyAttempts(env, `photo|${user.id}`, 60, 3600e3)) throw new HttpError(429, 'Je stuurt te veel foto\'s, probeer het later opnieuw');
   const enc = url.searchParams.get('enc') === '1' ? 1 : 0;
+  if (enc) await noEncForLite(env, conv);
   const img = enc ? await readEncrypted(env, request) : await readImage(env, request);
   await recordAttempt(env, `photo|${user.id}`);
   const w = Math.min(20000, Number(url.searchParams.get('w')) || 0);
@@ -972,6 +974,7 @@ async function editMessage(env, user, id, request) {
   let enc = 0;
   if (b.enc) {
     const conv = await memberOf(env, user, m.conversation_id);
+    await noEncForLite(env, conv);
     text = checkEnvelope(b.body, conv);
     enc = 1;
   } else {
@@ -989,6 +992,7 @@ async function encryptOldMessage(env, user, id, request) {
   const m = await ownMessage(env, user, id);
   if (m.enc || m.kind !== 'text') return json(msgOut(m));
   const conv = await memberOf(env, user, m.conversation_id, false);
+  await noEncForLite(env, conv);
   const b = await body(request);
   const text = checkEnvelope(b.body, conv);
   await env.DB.prepare('UPDATE messages SET body = ?, enc = 1 WHERE id = ? AND enc = 0').bind(text, id).run();
@@ -1094,6 +1098,7 @@ async function bigTicket(env, user, convId, request) {
 async function sendBig(env, user, convId, request) {
   const conv = await memberOf(env, user, convId);
   await canMessage(env, user, conv);
+  await noEncForLite(env, conv);
   const b = await body(request);
   const file = await env.DB.prepare('SELECT id FROM bigfiles WHERE id = ? AND conversation_id = ? AND owner_id = ?').bind(str(b.file, 40), convId, user.id).first();
   if (!file) throw new HttpError(404, 'Bestand niet gevonden');
@@ -1482,6 +1487,7 @@ async function route(request, env, url) {
     if (!c && m === 'DELETE') return deleteMessage(env, user, id);
     if (c === 'report' && m === 'POST') return reportMessage(env, user, id, request);
     if (c === 'encrypt' && m === 'PUT') return encryptOldMessage(env, user, id, request);
+    if (c === 'plain' && m === 'PUT') return unsealMessage(env, user, id, request);
     if (c === 'reaction' && m === 'PUT') return react(env, user, id, request);
     if (c === 'hide' && m === 'POST') return hideMessage(env, user, id);
   }
@@ -1545,5 +1551,5 @@ export default {
 // Voor Skitta Lite (src/lite.js).
 export {
   body, str, setting, hub, later, conversationsFor, contactRow, makeContacts, directConversation, memberOf, canMessage,
-  activeMemberIds, mediaInsert, mediaStore, sniffImage, msgOut, pushMessage
+  activeMemberIds, mediaInsert, mediaStore, sniffImage, msgOut, pushMessage, ownMessage, dropMedia
 };

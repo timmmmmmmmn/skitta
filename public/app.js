@@ -1665,6 +1665,7 @@ async function openConv(id) {
   if (last) markRead(id, last.id);
   renderList();
   encryptOld(id);
+  unsealOld(id);
   if (window.innerWidth > 720) setTimeout(() => $('#compose-text')?.focus(), 0);
 }
 
@@ -1682,6 +1683,40 @@ async function encryptOld(convId) {
       return;
     }
   }
+}
+
+// Eigen berichten die toch versleuteld naar iemand op Skitta Lite gingen (met een oude versie van Skitta):
+// Lite kan ze niet lezen, dus de afzender zet ze alsnog om naar leesbaar, op dezelfde plek in het gesprek.
+async function unsealOld(convId) {
+  if (!plainConv(convId)) return;
+  const old = bucket(convId).list.filter((m) => m.id && m.u === S.me.id && m.e && !m.locked && !m.del && !m.rm && ['text', 'photo'].includes(m.k));
+  for (const m of old) {
+    try {
+      let out;
+      if (m.k === 'text') {
+        out = await api('PUT', `messages/${m.id}/plain`, { body: m.b });
+      } else {
+        const meta = attachMeta(m);
+        const url = meta.big ? await E2E.bigUrl(m, meta) : await E2E.photoUrl(m, meta.mime);
+        if (!url) continue;
+        const blob = await (await fetch(url)).blob();
+        if (blob.size > PLAIN_MAX) continue;
+        const keep = { t: meta.t, name: meta.name, mime: meta.mime || blob.type, dur: meta.dur, thumb: meta.thumb, cap: meta.cap };
+        const form = new FormData();
+        form.append('file', new Blob([blob], { type: keep.mime || 'application/octet-stream' }), meta.name || 'bijlage');
+        form.append('meta', JSON.stringify(keep));
+        form.append('w', String(m.w || 0));
+        form.append('h', String(m.h || 0));
+        const res = await fetch(`/api/messages/${m.id}/plain`, { method: 'PUT', body: form, credentials: 'same-origin' });
+        out = await res.json();
+        if (!res.ok) throw new Error(out.error);
+      }
+      upsertMessage(out);
+    } catch {
+      return;
+    }
+  }
+  if (old.length && S.cur === convId) renderMessages({ keepScroll: true });
 }
 
 function renderPane() {

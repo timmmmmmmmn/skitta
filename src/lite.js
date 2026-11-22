@@ -7,7 +7,7 @@
 import { HttpError, json, now, hashPassword, verifyPassword, createSession, tooManyAttempts, recordAttempt, clientIp, randomToken } from './util.js';
 import {
   body, str, setting, hub, later, conversationsFor, contactRow, makeContacts, directConversation, memberOf, canMessage,
-  activeMemberIds, mediaInsert, mediaStore, sniffImage, msgOut, pushMessage
+  activeMemberIds, mediaInsert, mediaStore, sniffImage, msgOut, pushMessage, ownMessage, dropMedia
 } from './worker.js';
 
 const NAME_RE = /^[a-z][a-z0-9._-]{2,31}$/;
@@ -120,18 +120,24 @@ export async function liteStart(env, user, request) {
   return json({ chat: chatOut(c, user) });
 }
 
-// Onversleutelde bijlage (foto, video, …) in een gesprek met een Lite-gebruiker. Zowel Skitta Lite als de
-// gewone Skitta-app gebruiken dit; versleutelde gesprekken blijven /photo gebruiken.
-export async function sendPlainFile(env, user, convId, request) {
-  const conv = await memberOf(env, user, convId);
-  await canMessage(env, user, conv);
-  const lite = conv.kind === 'direct' && await env.DB.prepare(
+// Een gesprek met een Lite-gebruiker? Daar heeft versleutelen geen zin: Skitta Lite kan het niet lezen.
+export async function liteConv(env, conv) {
+  return conv.kind === 'direct' && !!(await env.DB.prepare(
     'SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.conversation_id = ? AND u.lite = 1'
-  ).bind(convId).first();
-  if (!lite) throw new HttpError(400, 'Dit gesprek is versleuteld');
-  if (await tooManyAttempts(env, `photo|${user.id}`, 60, 3600e3)) throw new HttpError(429, 'Je stuurt te veel bijlagen, probeer het later opnieuw');
-  if (Number(request.headers.get('content-length') || 0) > FILE_MAX + 100_000) throw new HttpError(413, 'Bijlagen mogen maximaal 25 MB zijn');
+  ).bind(conv.id).first());
+}
 
+// Een oude Skitta-versie (nog open van vóór Skitta Lite) versleutelt alles; zulke berichten weigeren, anders
+// staat er bij de ander alleen "versleuteld bericht".
+export async function noEncForLite(env, conv) {
+  if (await liteConv(env, conv)) {
+    throw new HttpError(409, 'Dit gesprek is met iemand op Skitta Lite en wordt niet versleuteld. Sluit Skitta helemaal af en open het opnieuw, dan krijg je de nieuwste versie.');
+  }
+}
+
+// Bijlage uit een formulier (file, meta, w, h, cid) lezen en controleren.
+async function readPlainForm(request) {
+  if (Number(request.headers.get('content-length') || 0) > FILE_MAX + 100_000) throw new HttpError(413, 'Bijlagen mogen maximaal 25 MB zijn');
   const form = await request.formData();
   const file = form.get('file');
   if (!file || typeof file === 'string' || !file.size) throw new HttpError(400, 'Geen bestand ontvangen');
@@ -149,20 +155,32 @@ export async function sendPlainFile(env, user, convId, request) {
   const out = { t, name: str(meta.name || file.name, 200), size: buf.length, mime };
   if (Number(meta.dur) > 0) out.dur = Math.min(86400, Math.round(Number(meta.dur)));
   if (typeof meta.thumb === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(meta.thumb) && meta.thumb.length < 60_000) out.thumb = meta.thumb;
-  const w = Math.min(20000, Number(form.get('w')) || 0);
-  const h = Math.min(20000, Number(form.get('h')) || 0);
-  const cid = str(form.get('cid'), 40) || null;
+  if (meta.cap) out.cap = str(meta.cap, 1000);
+  return {
+    img: { buf, mime }, body: JSON.stringify(out),
+    w: Math.min(20000, Number(form.get('w')) || 0), h: Math.min(20000, Number(form.get('h')) || 0),
+    cid: str(form.get('cid'), 40) || null
+  };
+}
+
+// Onversleutelde bijlage (foto, video, …) in een gesprek met een Lite-gebruiker. Zowel Skitta Lite als de
+// gewone Skitta-app gebruiken dit; versleutelde gesprekken blijven /photo gebruiken.
+export async function sendPlainFile(env, user, convId, request) {
+  const conv = await memberOf(env, user, convId);
+  await canMessage(env, user, conv);
+  if (!(await liteConv(env, conv))) throw new HttpError(400, 'Dit gesprek is versleuteld');
+  if (await tooManyAttempts(env, `photo|${user.id}`, 60, 3600e3)) throw new HttpError(429, 'Je stuurt te veel bijlagen, probeer het later opnieuw');
+  const { img, body: meta, w, h, cid } = await readPlainForm(request);
 
   await recordAttempt(env, `photo|${user.id}`);
   const id = randomToken(18);
-  const img = { buf, mime };
   await mediaStore(env, user.id, id, img, { fileBytes: FILE_MAX, dailyBytes: LITE_DAILY });
   const at = now();
   const [, res] = await env.DB.batch([
     mediaInsert(env, id, user.id, convId, img, w, h),
     env.DB.prepare(
       "INSERT INTO messages (conversation_id, sender_id, kind, body, media_id, client_id, created_at, enc, expires_at) VALUES (?, ?, 'photo', ?, ?, ?, ?, 0, ?) RETURNING *"
-    ).bind(convId, user.id, JSON.stringify(out), id, cid, at, conv.expire ? at + conv.expire * 1000 : null),
+    ).bind(convId, user.id, meta, id, cid, at, conv.expire ? at + conv.expire * 1000 : null),
     env.DB.prepare('UPDATE conversations SET last_at = ? WHERE id = ?').bind(at, convId),
     env.DB.prepare('UPDATE members SET last_read = (SELECT MAX(id) FROM messages WHERE conversation_id = ?) WHERE conversation_id = ? AND user_id = ?').bind(convId, convId, user.id)
   ]);
@@ -170,4 +188,34 @@ export async function sendPlainFile(env, user, convId, request) {
   await hub(env).notify(await activeMemberIds(env, convId), { t: 'msg', m });
   later(env, pushMessage(env, user, conv, res.results[0]));
   return json(m, 201);
+}
+
+// Eigen bericht dat toch versleuteld naar iemand op Skitta Lite ging (oude versie): de afzender zet het om
+// naar leesbaar, op dezelfde plek in het gesprek. Tekst als JSON { body }, een bijlage als formulier (zie boven).
+export async function unsealMessage(env, user, id, request) {
+  const m = await ownMessage(env, user, id);
+  if (!m.enc) return json(msgOut(m));
+  const conv = await memberOf(env, user, m.conversation_id, false);
+  if (!(await liteConv(env, conv))) throw new HttpError(400, 'Dit gesprek is versleuteld');
+  if (m.kind === 'text') {
+    const text = String((await body(request)).body ?? '').replace(/\r\n/g, '\n').trim().slice(0, 8000);
+    if (!text) throw new HttpError(400, 'Leeg bericht');
+    await env.DB.prepare('UPDATE messages SET body = ?, enc = 0 WHERE id = ? AND enc = 1').bind(text, id).run();
+  } else if (m.kind === 'photo') {
+    if (await tooManyAttempts(env, `photo|${user.id}`, 60, 3600e3)) throw new HttpError(429, 'Je stuurt te veel bijlagen, probeer het later opnieuw');
+    const { img, body: meta, w, h } = await readPlainForm(request);
+    await recordAttempt(env, `photo|${user.id}`);
+    const mid = randomToken(18);
+    await mediaStore(env, user.id, mid, img, { fileBytes: FILE_MAX, dailyBytes: LITE_DAILY });
+    await env.DB.batch([
+      mediaInsert(env, mid, user.id, m.conversation_id, img, w, h),
+      env.DB.prepare('UPDATE messages SET body = ?, media_id = ?, enc = 0 WHERE id = ? AND enc = 1').bind(meta, mid, id)
+    ]);
+    await dropMedia(env, m.media_id);
+  } else {
+    throw new HttpError(400, 'Dit bericht kun je niet omzetten');
+  }
+  const out = msgOut(await ownMessage(env, user, id));
+  await hub(env).notify(await activeMemberIds(env, m.conversation_id), { t: 'msg', m: out });
+  return json(out);
 }
