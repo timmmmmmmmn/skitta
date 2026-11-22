@@ -30,6 +30,7 @@
   }
 
   var isLumia = !!(window.Windows && Windows.UI);
+  function log(s) { if (window.__liteLog) window.__liteLog(s); } // naar de worker-log (fout.js)
   var Native = window.BellieNative || null;
   if (isLumia) document.documentElement.className += ' lumia';
 
@@ -873,29 +874,33 @@
   });
 
   // Lumia: camera en bestandskiezer van Windows zelf (de gewone <input> kan daar geen video's maken of kiezen).
-  function storageToFile(sf) {
-    if (window.MSApp && MSApp.createFileFromStorageFile) return Promise.resolve(MSApp.createFileFromStorageFile(sf));
-    // terugval: zelf inlezen
+  function storageToFile(sf, kind) {
+    // Video's zelf inlezen tot een gewone Blob: een MSApp-bestand gaat in Edge 14 mis bij FormData/new Blob.
+    if (kind !== 'video' && window.MSApp && MSApp.createFileFromStorageFile) return Promise.resolve(MSApp.createFileFromStorageFile(sf));
     return new Promise(function (resolve, reject) {
       Windows.Storage.FileIO.readBufferAsync(sf).then(function (buf) {
         var r = Windows.Storage.Streams.DataReader.fromBuffer(buf);
         var arr = new Uint8Array(buf.length);
         r.readBytes(arr);
         r.close();
-        var b = new Blob([arr], { type: sf.contentType || '' });
+        var b = new Blob([arr], { type: sf.contentType || (kind === 'video' ? videoType(sf.name) : '') });
         try { b.name = sf.name; } catch (e) {}
         resolve(b);
       }, reject);
     });
   }
+  function videoType(name) {
+    return /\.mov$/i.test(name || '') ? 'video/quicktime' : /\.3gp$/i.test(name || '') ? 'video/3gpp' : 'video/mp4';
+  }
   function lumiaGot(kind, sf) {
-    if (!sf) return; // geannuleerd
+    if (!sf) return log(kind + ': geannuleerd'); // geannuleerd
+    log(kind + ': gekozen ' + sf.name + ' ' + sf.contentType);
     progress(1);
-    storageToFile(sf).then(function (f) {
+    storageToFile(sf, kind).then(function (f) {
       progress(-1);
-      if (!f.type && kind === 'video') f = new Blob([f], { type: 'video/mp4' });
+      log(kind + ': ingelezen ' + f.size + ' ' + f.type);
       picked(kind, f);
-    }, function (e) { progress(-1); oops(new Error('Het bestand kon niet gelezen worden.')); });
+    }, function (e) { progress(-1); log(kind + ': inlezen mislukt ' + (e && e.message)); oops(new Error('Het bestand kon niet gelezen worden.')); });
   }
   function lumiaCapture(kind) {
     try {
@@ -911,7 +916,7 @@
       }
       ui.captureFileAsync(kind === 'video' ? C.CameraCaptureUIMode.video : C.CameraCaptureUIMode.photo).then(function (sf) {
         lumiaGot(kind, sf);
-      }, function () { capture2(kind); });
+      }, function (e) { log(kind + ': camera mislukt ' + (e && e.message)); capture2(kind); });
       return true;
     } catch (e) { return false; }
   }
@@ -1084,6 +1089,7 @@
     progress(1);
     prepVideo(file).then(function (p) {
       progress(-1);
+      log('video: voorbeeld ' + (p.thumb ? 'ja' : 'nee') + ' ' + p.w + 'x' + p.h + (current !== c ? ' (chat dicht)' : ''));
       if (current !== c) return;
       var type = file.type || 'video/mp4';
       var m = localMsg('video', { w: p.w, h: p.h, local: p.thumb ? URL.createObjectURL(p.thumb) : null, blob: file, blobType: type, thumbBlob: p.thumb });
@@ -1115,11 +1121,14 @@
       form.append('w', String(m.w || 0));
       form.append('h', String(m.h || 0));
       form.append('cid', m.cid);
+      if (m.kind === 'video') log('video: uploaden ' + m.blob.size);
       return request('POST', '/api/conversations/' + m.chat + '/plain', undefined, { form: form, onprogress: setBar });
     }).then(function (res) {
+      if (m.kind === 'video') log('video: verstuurd');
       m.blob = null; m.thumbBlob = null;
       sent(c, m, norm(res));
     }, function (e) {
+      log(m.kind + ': versturen mislukt ' + (e && e.message));
       m.failed = true;
       replaceMsg(m, m);
       oops(e);

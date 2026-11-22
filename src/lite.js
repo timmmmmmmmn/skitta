@@ -144,20 +144,24 @@ async function readPlainForm(request) {
   let meta = {};
   try { meta = JSON.parse(String(form.get('meta') || '{}')); } catch {}
   const t = KINDS.includes(meta.t) ? meta.t : 'file';
-  const mime = str(file.type, 100).toLowerCase() || 'application/octet-stream';
+  let mime = str(file.type, 100).toLowerCase() || 'application/octet-stream';
   const buf = new Uint8Array(await file.arrayBuffer());
+  const img = { buf, mime };
   if (t === 'photo' || t === 'gif' || t === 'sticker') {
     if (buf.length > PHOTO_MAX) throw new HttpError(413, 'Deze foto is te groot');
     if (!sniffImage(buf)) throw new HttpError(415, 'Alleen JPEG-, PNG-, GIF- of WebP-afbeeldingen');
   } else if (t === 'video' && !mime.startsWith('video/')) {
-    throw new HttpError(415, 'Dit is geen video');
+    // De Lumia geeft soms geen type mee: dan aan de inhoud zien of het een mp4/mov is ("ftyp" vooraan).
+    if (String.fromCharCode(...buf.subarray(4, 8)) !== 'ftyp') throw new HttpError(415, 'Dit is geen video');
+    mime = String.fromCharCode(...buf.subarray(8, 10)) === 'qt' ? 'video/quicktime' : 'video/mp4';
+    img.mime = mime;
   }
   const out = { t, name: str(meta.name || file.name, 200), size: buf.length, mime };
   if (Number(meta.dur) > 0) out.dur = Math.min(86400, Math.round(Number(meta.dur)));
   if (typeof meta.thumb === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(meta.thumb) && meta.thumb.length < 60_000) out.thumb = meta.thumb;
   if (meta.cap) out.cap = str(meta.cap, 1000);
   return {
-    img: { buf, mime }, body: JSON.stringify(out),
+    img, body: JSON.stringify(out),
     w: Math.min(20000, Number(form.get('w')) || 0), h: Math.min(20000, Number(form.get('h')) || 0),
     cid: str(form.get('cid'), 40) || null
   };
