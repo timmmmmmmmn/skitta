@@ -101,8 +101,10 @@
   }
 
   // ---------- server ----------
-  var me = null; // ingelogd als (de sessie zelf is een cookie)
-  try { me = JSON.parse(store('bc_me') || 'null'); } catch (e) {}
+  // Net als Belliechat: een token in plaats van een cookie (cookies werken niet goed in de Lumia-app).
+  var token = store('bc_token');
+  var me = null;
+  if (token) try { me = JSON.parse(store('bc_me') || 'null'); } catch (e) {}
 
   var busy = 0;
   function progress(d) {
@@ -124,6 +126,7 @@
         payload = JSON.stringify(data);
         x.setRequestHeader('Content-Type', 'application/json');
       }
+      if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
       if (opts.xhr) opts.xhr(x);
       x.onload = function () {
         var res = null;
@@ -302,21 +305,22 @@
       $('lGo').disabled = false;
       $('lPass').value = $('lPass2').value = '';
       if (document.activeElement) document.activeElement.blur();
-      signedIn(r.user);
+      signedIn(r.token, r.user);
     }, function (err) {
       $('lGo').disabled = false;
       $('lErr').textContent = err.message;
     });
   });
 
-  function signedIn(user) {
-    me = user;
+  function signedIn(t, user) {
+    token = t; me = user;
+    store('bc_token', t);
     store('bc_me', JSON.stringify(user));
     start();
   }
   function signedOut() {
-    me = null;
-    store('bc_me', null);
+    token = null; me = null;
+    store('bc_token', null); store('bc_me', null);
     if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
     chats = []; current = null;
     $('chatList').innerHTML = '';
@@ -426,7 +430,7 @@
     }
     return m;
   }
-  function mediaSrc(id) { return '/api/media/' + encodeURIComponent(id); }
+  function mediaSrc(id) { return '/api/media/' + encodeURIComponent(id) + '?t=' + encodeURIComponent(token); }
   function previewOf(m) {
     if (!m) return '';
     if (m.kind === 'photo') return 'foto';
@@ -1160,7 +1164,7 @@
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
     clearTimeout(wsTimer);
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-    try { ws = new WebSocket(proto + location.host + '/api/ws?dev=lite'); } catch (e) { return retryConnect(); }
+    try { ws = new WebSocket(proto + location.host + '/api/ws?dev=lite&t=' + encodeURIComponent(token)); } catch (e) { return retryConnect(); }
     var sock = ws;
     sock.onopen = function () {
       wsDelay = 1000;
@@ -1293,6 +1297,7 @@
 
   // ---------- start ----------
   function start() {
+    if (window.__liteLog) window.__liteLog(me ? 'start, ingelogd' : 'start, inlogscherm');
     if (!me) { showBase('p-login'); return; }
     showBase('p-main');
     if (pivotIndex !== 0) setPivot(0);

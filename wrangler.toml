@@ -43,3 +43,8 @@ custom_domain = true
 [[routes]]
 pattern = "skittalite.timvanbergen.nl"
 custom_domain = true
+
+# Oude adres van Skitta Lite: de Belliechat-app op de Lumia mag alleen dit domein openen, dus hier geen doorverwijzing.
+[[routes]]
+pattern = "belliechat.timvanbergen.nl"
+custom_domain = true

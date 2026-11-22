@@ -10,7 +10,7 @@ import { LIMITS, bump, usageKey, checkUpload, canRead, turnAllowed, usageReport 
 import { pushTo, vapidPublicKey } from './push.js';
 import { BIG, uploadTicket, downloadTicket } from './bigfiles.js';
 import { gifSearch, gifMedia } from './gifs.js';
-import { liteRegister, liteLogin, liteChats, liteStart, sendPlainFile, LITE_CSP } from './lite.js';
+import { liteRegister, liteLogin, liteChats, liteStart, sendPlainFile, liteCsp } from './lite.js';
 
 export { Hub };
 
@@ -1410,7 +1410,9 @@ async function route(request, env, url) {
   if (p === 'lite/login' && m === 'POST') return liteLogin(env, request);
   if (p === 'config' && m === 'GET') return json({ registration: await setting(env, 'registration', 'open') });
 
-  const user = await sessionUser(env, request);
+  // Skitta Lite zet zijn token in de URL waar geen header kan: de live verbinding en <img>/<video>.
+  const qt = (p === 'ws' || (a === 'media' && m === 'GET')) && url.searchParams.get('t');
+  const user = await sessionUser(env, qt ? new Request(url, { headers: { authorization: `Bearer ${qt}` } }) : request);
   if (!user) throw new HttpError(401, 'Niet ingelogd');
   const id = Number(b);
 
@@ -1525,11 +1527,11 @@ export default {
         return json({ error: 'Er ging iets mis op de server' }, 500);
       }
     }
-    if (url.hostname.startsWith('skittalite.')) {
+    if (url.hostname.startsWith('skittalite.') || url.hostname.startsWith('belliechat.')) {
       if (!url.pathname.startsWith('/lite/')) url.pathname = '/lite' + url.pathname;
       const res = await env.ASSETS.fetch(new Request(url, request));
       const out = new Response(res.body, res);
-      out.headers.set('content-security-policy', LITE_CSP);
+      out.headers.set('content-security-policy', liteCsp(url.host));
       return out;
     }
     return env.ASSETS.fetch(request);

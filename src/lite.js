@@ -1,7 +1,8 @@
 // Skitta Lite: lichte accounts voor oude of trage telefoons (zoals een Lumia 435). Geen sleutels en geen
 // versleuteling, dus inloggen is meteen klaar. Lite-gebruikers chatten met elkaar én met gewone Skitta-gebruikers;
 // zo'n gesprek is niet end-to-end versleuteld (de Skitta-app laat dat zien en verstuurt daar onversleuteld).
-// De webapp staat in public/lite/ en draait op skittalite.timvanbergen.nl. Verder gebruikt hij de gewone API
+// De webapp staat in public/lite/ en draait op skittalite.timvanbergen.nl (en op belliechat.timvanbergen.nl,
+// waar de oude Belliechat-app op de Lumia nog naartoe gaat). Verder gebruikt hij de gewone API
 // (berichten, gelezen, /api/media, /api/ws).
 import { HttpError, json, now, hashPassword, verifyPassword, createSession, tooManyAttempts, recordAttempt, clientIp, randomToken } from './util.js';
 import {
@@ -11,8 +12,9 @@ import {
 
 const NAME_RE = /^[a-z][a-z0-9._-]{2,31}$/;
 
-export const LITE_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-  "media-src 'self' blob:; connect-src 'self' wss://skittalite.timvanbergen.nl; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+// Edge 14 rekent wss: niet tot 'self', dus het adres staat er los bij.
+export const liteCsp = (host) => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+  `media-src 'self' blob:; connect-src 'self' wss://${host}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
 
 // Grenzen voor onversleutelde bijlagen. De totalen van Skitta (src/limits.js) gelden daarbovenop.
 const PHOTO_MAX = 4 * 1024 ** 2;
@@ -24,8 +26,11 @@ function liteUser(u) {
   return { id: u.id, name: u.display_name, username: u.username };
 }
 
+// Net als Belliechat: een token (geen cookie), want cookies werken niet goed in de Lumia-app.
 async function session(env, user, status = 200) {
-  return json({ ok: true, user: liteUser(user) }, status, { 'set-cookie': await createSession(env, user.id, true) });
+  const token = randomToken(32);
+  await createSession(env, user.id, true, token);
+  return json({ ok: true, token, user: liteUser(user) }, status);
 }
 
 export async function liteRegister(env, request) {
