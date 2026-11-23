@@ -43,7 +43,10 @@
     photo: '<rect x="1.5" y="3.5" width="17" height="13"/><path d="M1.5 14l5-5 4.5 4.5 2.5-2.5 5 5"/><circle cx="14" cy="7.5" r="1.5"/>',
     video: '<rect x="1.5" y="5" width="11.5" height="10"/><path d="M13 9l5.5-3v8L13 11"/>',
     close: '<path d="M3 3l14 14M17 3L3 17"/>',
-    play: '<path d="M1 1l16 9-16 9z" fill="currentColor" stroke="none"/>'
+    play: '<path d="M1 1l16 9-16 9z" fill="currentColor" stroke="none"/>',
+    phone: '<path d="M6 1.5l2.5 4-2 2c1 2.4 3.6 5 6 6l2-2 4 2.5-1 3.5C10 17.5 2.5 10 2.5 2.5z"/>',
+    hangup: '<path d="M1.5 12c4.5-4.6 12.5-4.6 17 0l-1.5 3-4-1.2v-2.5c-2-.6-4-.6-6 0v2.5l-4 1.2z"/>',
+    mic: '<rect x="7" y="1.5" width="6" height="10" rx="3"/><path d="M3.5 9.5a6.5 6.5 0 0013 0M10 16v2.5M6.5 18.5h7"/>'
   };
   function icon(name) {
     return '<svg viewBox="0 0 20 20" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="miter">' + ICONS[name] + '</svg>';
@@ -323,6 +326,10 @@
     token = null; me = null;
     store('bc_token', null); store('bc_me', null);
     if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
+    if (Call.active) endCall('', true);
+    if (Call.incoming) dismissIncoming();
+    nativeSession();
+    lumiaSession();
     chats = []; current = null;
     $('chatList').innerHTML = '';
     showBase('p-login');
@@ -331,7 +338,7 @@
   $('logout').addEventListener('click', function () {
     dialog('Afmelden?', 'Je kunt je daarna weer aanmelden met je naam en wachtwoord.', ['afmelden', 'annuleren'], function (i) {
       if (i !== 0) return;
-      request('POST', '/api/logout').then(signedOut, signedOut);
+      dropPush().then(function () { return request('POST', '/api/logout'); }).then(signedOut, signedOut);
     });
   });
 
@@ -396,13 +403,14 @@
   }
   function showSettings() {
     markSettings();
+    markPush();
     $('meName').textContent = me ? me.name : '';
     var ua = navigator.userAgent;
     var android = /Android/.test(ua) && !Native;
     var ios = /iPhone|iPad|iPod/.test(ua) && !window.navigator.standalone;
     $('getApp').hidden = !(android || ios);
     if (ios) {
-      $('getAppText').textContent = 'Op de iPhone: tik in Safari op Delen en dan op "Zet op beginscherm". Dan werkt Skitta Lite als een app.';
+      $('getAppText').textContent = 'Op de iPhone: tik in Safari op Delen en dan op "Zet op beginscherm". Dan werkt Skitta Lite als een app en krijg je ook meldingen.';
       $('getAppBtn').hidden = true;
     } else if (android) {
       $('getAppText').textContent = 'Er is ook een Android-app.';
@@ -417,7 +425,7 @@
     var m = { id: s.id, chat: s.c, from: s.u, kind: 'text', body: s.b || '', at: s.at, cid: s.cid || null, media: s.media || null, w: s.w, h: s.h };
     if (s.del || s.rm) { m.kind = 'note'; m.body = s.rm ? 'bericht verwijderd door de beheerder' : 'bericht verwijderd'; return m; }
     if (s.e) { m.kind = 'note'; m.body = 'versleuteld bericht (open Skitta om het te lezen)'; return m; }
-    if (s.k === 'call') { m.kind = 'note'; m.body = 'gesprek in Skitta'; return m; }
+    if (s.k === 'call') { m.kind = 'note'; m.body = callText(s); return m; }
     if (s.k === 'system') { m.kind = 'system'; return m; }
     if (s.k === 'photo') {
       var meta = null;
@@ -430,6 +438,15 @@
       if (!m.media) { m.gone = 1; }
     }
     return m;
+  }
+  function callText(s) {
+    var d = {};
+    try { d = JSON.parse(s.b || '{}'); } catch (e) {}
+    var kind = d.video ? 'videogesprek' : 'gesprek';
+    if (d.failed) return kind + ' mislukt';
+    if (d.missed) return me && s.u === me.id ? kind + ' niet beantwoord' : 'gemiste oproep';
+    var t = d.dur || 0;
+    return kind + ', ' + Math.floor(t / 60) + ':' + two(t % 60);
   }
   function mediaSrc(id) { return '/api/media/' + encodeURIComponent(id) + '?t=' + encodeURIComponent(token); }
   function previewOf(m) {
@@ -1189,6 +1206,7 @@
       wsDelay = 1000;
       var wasOk = wsOk;
       wsOk = true;
+      if (document.hidden) sock.send('{"t":"idle","on":true}');
       if (wasOk) catchUp(); // na een onderbreking alles bijwerken
       clearInterval(pingTimer);
       pingTimer = setInterval(function () { if (sock.readyState === 1) sock.send('{"t":"ping"}'); }, 45000);
@@ -1200,6 +1218,7 @@
       else if (d.t === 'read') onRead(d);
       else if (d.t === 'contacts' && d.accepted) onAccepted(d.accepted);
       else if (d.t === 'conv') loadChats().then(null, function () {});
+      else if (d.t === 'call') onCallSignal(d);
       else if (d.t === 'kick') signedOut();
     };
     sock.onclose = function () {
@@ -1264,6 +1283,7 @@
     if (!mine && !known && !d.m.ed && !d.m.del && !(current && current.id === m.chat)) {
       toast(c ? c.user.name : 'Nieuw bericht', m.kind === 'text' || m.kind === 'note' ? m.body : 'stuurde een ' + previewOf(m), m.chat);
     }
+    if (!mine && !known && !d.m.ed && !d.m.del) notifyAway(c ? c.user.name : 'Skitta Lite', m.kind === 'text' || m.kind === 'note' ? m.body : 'stuurde een ' + previewOf(m), 'c' + m.chat);
   }
   function onRead(d) {
     if (!me || d.u !== me.id) return;
@@ -1279,13 +1299,637 @@
   }
 
   document.addEventListener('visibilitychange', function () {
+    // Niet in beeld = "afwezig": dan stuurt de server pushmeldingen (de pagina zelf geeft er dan geen).
+    if (ws && ws.readyState === 1) try { ws.send(document.hidden ? '{"t":"idle","on":true}' : '{"t":"idle","on":false}'); } catch (e) {}
     if (document.hidden) return;
     if (!me) return;
+    if (isLumia) lumiaUntoast('call');
     if (!ws) { wsDelay = 1000; connect(); }
     catchUp(); // de verbinding kan op de achtergrond stil zijn doodgegaan
     markRead();
   });
   window.addEventListener('online', function () { if (me && !ws) { wsDelay = 1000; connect(); } });
+
+  // ---------- meldingen ----------
+  // Web: pushmeldingen via de service worker (iPhone-beginschermapp, Chrome). Android-app: de app houdt zelf een
+  // verbinding open (BellieNative.session). Lumia: Windows-meldingen zolang de app nog draait, en een
+  // achtergrondtaak (bg.js in het appx-pakket) die elk kwartier kijkt of er iets nieuws is.
+  var swReg = null;
+  var canPush = !Native && !isLumia && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  if (canPush) {
+    navigator.serviceWorker.register('sw.js').then(function (r) { swReg = r; if (me) syncPush(); }, function () {});
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      if (e.data && e.data.t === 'open') liteOpen(e.data.c);
+    });
+  }
+  function pushOn() { return canPush && Notification.permission === 'granted'; }
+  function b64uBytes(s) {
+    var t = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (t.length % 4) t += '=';
+    var raw = atob(t), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  // Abonnement (opnieuw) aan de server geven; het kan na een update van de browser veranderd zijn.
+  function syncPush(ask) {
+    if (!swReg || !me) return Promise.resolve(false);
+    if (!ask && !pushOn()) return Promise.resolve(false);
+    var perm = Notification.permission === 'granted' ? Promise.resolve('granted') : new Promise(function (resolve) {
+      var p = Notification.requestPermission(resolve);
+      if (p && p.then) p.then(resolve);
+    });
+    return perm.then(function (r) {
+      if (r !== 'granted') throw new Error('Meldingen zijn niet toegestaan. Zet ze aan in de instellingen van je telefoon.');
+      return swReg.pushManager.getSubscription();
+    }).then(function (sub) {
+      if (sub) return sub;
+      return request('GET', '/api/push/key').then(function (k) {
+        return swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(k.key) });
+      });
+    }).then(function (sub) {
+      return request('POST', '/api/push', JSON.parse(JSON.stringify(sub)));
+    }).then(function () { return true; });
+  }
+  function dropPush() {
+    if (!swReg) return Promise.resolve();
+    return swReg.pushManager.getSubscription().then(function (sub) {
+      if (!sub) return;
+      return request('DELETE', '/api/push', { endpoint: sub.endpoint }).then(null, function () {}).then(function () { return sub.unsubscribe(); });
+    }).then(null, function () {});
+  }
+  function markPush() {
+    var box = $('pushBox');
+    box.hidden = !canPush;
+    if (!canPush) return;
+    var on = pushOn();
+    $('pushBtn').hidden = on;
+    $('pushText').textContent = on ? 'Meldingen staan aan. Je krijgt een melding bij nieuwe berichten en als iemand je belt.'
+      : Notification.permission === 'denied' ? 'Meldingen zijn geblokkeerd. Zet ze aan in de instellingen van je telefoon of browser.'
+      : 'Krijg een melding bij nieuwe berichten en als iemand je belt, ook als Skitta Lite dicht is.';
+  }
+  $('pushBtn').addEventListener('click', function () {
+    syncPush(true).then(markPush, function (e) { markPush(); oops(e); });
+  });
+
+  // Android-app: de achtergrondverbinding van de app weet zo wie je bent.
+  function nativeSession() {
+    if (Native && Native.session) try { Native.session(token || '', me ? me.id : 0); } catch (e) {}
+  }
+
+  // Lumia: token voor de achtergrondtaak en die taak aanmelden (alleen in een pakket dat bg.js heeft).
+  function lumiaSession() {
+    if (!isLumia) return;
+    try {
+      var vals = Windows.Storage.ApplicationData.current.localSettings.values;
+      if (token) vals.insert('token', token); else vals.remove('token');
+    } catch (e) {}
+    if (!token) return;
+    try {
+      var B = Windows.ApplicationModel.Background;
+      B.BackgroundExecutionManager.requestAccessAsync().then(function () {
+        try {
+          var it = B.BackgroundTaskRegistration.allTasks.first();
+          while (it.hasCurrent) {
+            if (it.current.value.name === 'skittalite') return;
+            it.moveNext();
+          }
+          var b = new B.BackgroundTaskBuilder();
+          b.name = 'skittalite';
+          b.taskEntryPoint = 'bg.js';
+          b.setTrigger(new B.TimeTrigger(15, false));
+          b.addCondition(new B.SystemCondition(B.SystemConditionType.internetAvailable));
+          b.register();
+          log('achtergrondtaak aangemeld');
+        } catch (e) { log('achtergrondtaak: ' + e.message); }
+      }, function () {});
+    } catch (e) {}
+  }
+  function xmlEsc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function lumiaToast(title, text, tag, ring) {
+    try {
+      var N = Windows.UI.Notifications;
+      var doc = new Windows.Data.Xml.Dom.XmlDocument();
+      doc.loadXml('<toast launch="' + xmlEsc(tag) + '"' + (ring ? ' scenario="incomingCall" duration="long"' : '') + '><visual><binding template="ToastGeneric"><text>' +
+        xmlEsc(title) + '</text><text>' + xmlEsc(text) + '</text></binding></visual>' +
+        (ring ? '<audio src="ms-winsoundevent:Notification.Looping.Call" loop="true"/>' : '') + '</toast>');
+      var t = new N.ToastNotification(doc);
+      try { t.tag = tag; } catch (e) {}
+      N.ToastNotificationManager.createToastNotifier().show(t);
+    } catch (e) {}
+  }
+  function lumiaUntoast(tag) {
+    try { Windows.UI.Notifications.ToastNotificationManager.history.remove(tag); } catch (e) {}
+  }
+  // Melding terwijl de app op de achtergrond nog draait. Web met push: de server stuurt die al.
+  function notifyAway(title, text, tag, ring) {
+    if (!document.hidden) return;
+    if (isLumia) lumiaToast(title, text, tag, ring);
+  }
+
+  // Openen vanuit een melding: naar de chat, en bij "opnemen" de oproep meteen aannemen.
+  function liteOpen(c, answer) {
+    c = +c || 0;
+    if (answer) Call.autoAnswer = { conv: c, until: Date.now() + 30000 };
+    if (Call.incoming && answer && (!c || Call.incoming.conv === c)) return acceptCall(Call.incoming.video);
+    if (!c || Call.active || Call.incoming) return;
+    var chat = findChat(c);
+    if (chat) { if (!current || current.id !== c) openChat(chat); }
+    else loadChats().then(function () { var x = findChat(c); if (x) openChat(x); }, function () {});
+  }
+  window.liteOpen = liteOpen;
+  // Lumia: getikt op een melding (launch="c<id>" uit bg.js of een belmelding).
+  if (isLumia) {
+    try {
+      Windows.UI.WebUI.WebUIApplication.addEventListener('activated', function (e) {
+        var m = /^c(\d+)$/.exec((e && e.arguments) || '');
+        if (m && me) liteOpen(+m[1]);
+      });
+    } catch (e) {}
+  }
+
+  // ---------- bellen ----------
+  // Hetzelfde protocol als Skitta (public/app.js, Call): ring → accept → offer/answer/ice via de Hub,
+  // alleen niet versleuteld (Skitta Lite heeft geen sleutels). Lumia: Edge 14 heeft alleen ORTC, adapter.js
+  // maakt daar een RTCPeerConnection van (alleen geluid).
+  var Call = { active: null, incoming: null, ended: {}, ice: null, muted: false, camOff: false, autoAnswer: null };
+  function rtcPossible() {
+    return !!((window.RTCPeerConnection || window.webkitRTCPeerConnection || window.RTCIceGatherer) &&
+      navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+  var adapterLoad = null;
+  function ensureRtc() {
+    if (window.RTCPeerConnection) return Promise.resolve(true);
+    if (window.webkitRTCPeerConnection) { window.RTCPeerConnection = window.webkitRTCPeerConnection; return Promise.resolve(true); }
+    if (!window.RTCIceGatherer) return Promise.resolve(false);
+    if (!adapterLoad) {
+      adapterLoad = new Promise(function (resolve) {
+        var sc = document.createElement('script');
+        sc.src = 'adapter.js?v=1';
+        sc.onload = function () { resolve(!!window.RTCPeerConnection); };
+        sc.onerror = function () { adapterLoad = null; resolve(false); };
+        document.head.appendChild(sc);
+      });
+    }
+    return adapterLoad;
+  }
+  var NO_CALL = 'Bellen werkt niet op dit toestel.';
+  function callId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+  function signal(to, d, dev) {
+    var o = { t: 'call', to: to, d: d };
+    if (dev) o.dev = dev;
+    if (!ws || ws.readyState !== 1) return false;
+    try { ws.send(JSON.stringify(o)); } catch (e) { return false; }
+    return true;
+  }
+  function iceServers() {
+    if (Call.ice && Call.ice.at > Date.now() - 3600000) return Promise.resolve(Call.ice.list);
+    return request('GET', '/api/ice').then(function (list) {
+      Call.ice = { list: list, at: Date.now() };
+      return list;
+    }, function () { return [{ urls: 'stun:stun.cloudflare.com:3478' }]; });
+  }
+  function getMedia(video) {
+    return navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: video && !isLumia ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false
+    });
+  }
+  function stopTracks(stream) {
+    if (stream) each(stream.getTracks(), function (t) { try { t.stop(); } catch (e) {} });
+  }
+  function nameFor(uid) {
+    for (var i = 0; i < chats.length; i++) if (chats[i].user && chats[i].user.id === uid) return chats[i].user.name;
+    return 'Iemand';
+  }
+  function chatWith(uid) {
+    for (var i = 0; i < chats.length; i++) if (chats[i].user && chats[i].user.id === uid) return chats[i];
+    return null;
+  }
+
+  // geluiden (in de Android-app rinkelt de melding van de app zelf als hij op de achtergrond staat)
+  var sounds = {};
+  function sound(name, loop) {
+    if (name === 'CALL_IN' && Native && Native.front && !Native.front()) return;
+    try {
+      var a = sounds[name] || (sounds[name] = new Audio('sounds/' + name + '.m4a'));
+      a.loop = !!loop;
+      a.currentTime = 0;
+      var p = a.play();
+      if (p && p.then) p.then(null, function () {});
+    } catch (e) {}
+  }
+  function silence() {
+    for (var k in sounds) if (sounds.hasOwnProperty(k) && sounds[k].loop) try { sounds[k].pause(); } catch (e) {}
+  }
+
+  function nativeCall(on) {
+    if (Native && Native.callActive) try { Native.callActive(on); } catch (e) {}
+  }
+
+  // ---- scherm ----
+  function showCall() {
+    var a = Call.active, inc = Call.incoming;
+    var box = $('call');
+    if (!a && !inc) { box.hidden = true; return; }
+    var name = a ? a.name : inc.name;
+    box.hidden = false;
+    $('kName').textContent = name;
+    $('kAvatar').textContent = name.charAt(0);
+    $('kIn').hidden = !inc || !!a;
+    $('kOn').hidden = !a;
+    $('kAcceptV').hidden = !(inc && inc.video) || isLumia;
+    var vid = !!(a && (a.remoteVideo || a.local && a.local.getVideoTracks().length));
+    box.className = vid ? 'vid' : '';
+    $('kRemote').hidden = !(a && a.remoteVideo);
+    $('kLocal').hidden = !(a && a.local && a.local.getVideoTracks().length) || Call.camOff;
+    $('kCam').hidden = !(a && a.local && a.local.getVideoTracks().length);
+    $('kMute').className = 'kb' + (Call.muted ? ' on' : '');
+    $('kCam').className = 'kb' + (Call.camOff ? ' on' : '');
+    $('kState').textContent = callState();
+  }
+  function callState() {
+    var a = Call.active, inc = Call.incoming;
+    if (!a) return inc ? (inc.video ? 'wil met je videobellen' : 'belt je') : '';
+    if (a.state === 'ringing') return 'bellen…';
+    if (a.state === 'connecting') return 'verbinden…';
+    if (a.state === 'reconnecting') return 'verbinding herstellen…';
+    if (a.state === 'ended') return a.endText || 'gesprek beëindigd';
+    var s = Math.max(0, Math.round((Date.now() - a.started) / 1000));
+    return Math.floor(s / 60) + ':' + two(s % 60);
+  }
+
+  // ---- zelf bellen ----
+  function startCall(c, video) {
+    if (Call.active || Call.incoming) return;
+    if (!c || !c.user) return;
+    if (!ws || ws.readyState !== 1) { connect(); return dialog('Bellen', 'Nog geen verbinding. Probeer het zo opnieuw.'); }
+    ensureRtc().then(function (ok) {
+      if (!ok) throw new Error(NO_CALL);
+      return getMedia(video);
+    }).then(function (stream) {
+      if (Call.active || Call.incoming) { stopTracks(stream); return; }
+      var a = Call.active = {
+        id: callId(), peer: c.user.id, name: c.user.name, conv: c.id, dir: 'out', video: !!video, local: stream,
+        state: 'ringing', peerDev: null, pendingIce: [], started: 0, remoteVideo: false
+      };
+      Call.muted = false; Call.camOff = false;
+      $('kLocal').srcObject = stream;
+      nativeCall(true);
+      showCall();
+      sound('CALL_OUT', true);
+      var ring = { type: 'ring', id: a.id, video: !!video, conv: c.id };
+      signal(a.peer, ring);
+      // herhalen: wie de app opent na een melding, krijgt de oproep alsnog binnen
+      a.reRing = setInterval(function () {
+        if (Call.active === a && a.state === 'ringing') signal(a.peer, ring); else clearInterval(a.reRing);
+      }, 4000);
+      a.timeout = setTimeout(function () {
+        if (Call.active === a && a.state === 'ringing') {
+          signal(a.peer, { type: 'cancel', id: a.id });
+          endCall('geen antwoord');
+        }
+      }, 45000);
+    }, function (e) {
+      log('bellen: ' + (e && (e.name || e.message)));
+      dialog('Bellen', e && e.message === NO_CALL ? NO_CALL : 'Skitta Lite kan je microfoon' + (video ? ' of camera' : '') + ' niet gebruiken. Sta dit toe en probeer het opnieuw.');
+    });
+  }
+
+  // ---- gebeld worden ----
+  function onRing(e, d) {
+    if (Call.ended[d.id] || (Call.active && Call.active.id === d.id)) return;
+    if (Call.incoming && Call.incoming.id === d.id) return;
+    if (Call.active || Call.incoming) { signal(e.from, { type: 'busy', id: d.id }, e.dev); return; }
+    var conv = +d.conv || 0;
+    var inc = Call.incoming = { id: d.id, from: e.from, dev: e.dev, video: !!d.video, conv: conv, name: nameFor(e.from) };
+    if (inc.name === 'Iemand') loadChats().then(function () { if (Call.incoming === inc) { inc.name = nameFor(e.from); showCall(); } }, function () {});
+    inc.timeout = setTimeout(function () { if (Call.incoming === inc) dismissIncoming(); }, 60000);
+    var auto = Call.autoAnswer;
+    Call.autoAnswer = null;
+    if (auto && auto.until > Date.now() && (!auto.conv || auto.conv === conv)) { acceptCall(inc.video); return; }
+    showCall();
+    sound('CALL_IN', true);
+    notifyAway(inc.name, inc.video ? 'wil met je videobellen' : 'belt je', 'call', true);
+  }
+  function dismissIncoming() {
+    var inc = Call.incoming;
+    if (!inc) return;
+    clearTimeout(inc.timeout);
+    Call.incoming = null;
+    Call.ended[inc.id] = 1;
+    silence();
+    if (isLumia) lumiaUntoast('call');
+    showCall();
+  }
+  function acceptCall(withVideo) {
+    var inc = Call.incoming;
+    if (!inc || Call.active) return;
+    clearTimeout(inc.timeout);
+    silence();
+    if (isLumia) lumiaUntoast('call');
+    $('kIn').hidden = true;
+    $('kState').textContent = 'verbinden…';
+    ensureRtc().then(function (ok) {
+      if (!ok) throw new Error(NO_CALL);
+      return getMedia(withVideo);
+    }).then(function (stream) {
+      if (Call.incoming !== inc) { stopTracks(stream); return; }
+      Call.incoming = null;
+      var a = Call.active = {
+        id: inc.id, peer: inc.from, name: inc.name, conv: inc.conv, dir: 'in', video: !!withVideo, local: stream,
+        state: 'connecting', peerDev: inc.dev, pendingIce: [], started: 0, remoteVideo: false
+      };
+      Call.muted = false; Call.camOff = false;
+      $('kLocal').srcObject = stream;
+      nativeCall(true);
+      showCall();
+      return makePc(a).then(function () {
+        signal(inc.from, { type: 'accept', id: inc.id }, inc.dev);
+        signal(me.id, { type: 'taken', id: inc.id });
+      });
+    }).then(null, function (e) {
+      log('opnemen: ' + (e && (e.name || e.message)));
+      signal(inc.from, { type: 'decline', id: inc.id }, inc.dev);
+      if (Call.incoming === inc) dismissIncoming();
+      if (Call.active && Call.active.id === inc.id) endCall('mislukt', true);
+      dialog('Bellen', e && e.message === NO_CALL ? NO_CALL : 'Skitta Lite kan je microfoon niet gebruiken. Sta dit toe en probeer het opnieuw.');
+    });
+  }
+  function declineCall() {
+    var inc = Call.incoming;
+    if (!inc) return;
+    signal(inc.from, { type: 'decline', id: inc.id }, inc.dev);
+    signal(me.id, { type: 'taken', id: inc.id });
+    dismissIncoming();
+  }
+
+  // ---- verbinding ----
+  function plainDesc(d) { return { type: d.type, sdp: d.sdp }; }
+  function remoteDesc(d) { return window.RTCSessionDescription ? new RTCSessionDescription(d) : d; }
+  function candOf(c) {
+    return { candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex };
+  }
+  function addIce(a, c) {
+    var cand = window.RTCIceCandidate ? new RTCIceCandidate(c) : c;
+    try { a.pc.addIceCandidate(cand).then(null, function () {}); } catch (e) {}
+  }
+  function flushIce(a) {
+    var list = a.pendingIce;
+    a.pendingIce = [];
+    each(list, function (c) { addIce(a, c); });
+  }
+  function onRemoteStream(a, stream) {
+    a.remote = stream;
+    var au = $('kAudio');
+    au.srcObject = stream;
+    var p = au.play();
+    if (p && p.then) p.then(null, function () {});
+    if (!isLumia) {
+      $('kRemote').srcObject = stream;
+      var q = $('kRemote').play();
+      if (q && q.then) q.then(null, function () {});
+    }
+  }
+  function makePc(a) {
+    return iceServers().then(function (servers) {
+      var pc = new RTCPeerConnection({ iceServers: servers });
+      a.pc = pc;
+      pc.onicecandidate = function (ev) {
+        if (ev.candidate && Call.active === a) signal(a.peer, { type: 'ice', id: a.id, c: candOf(ev.candidate) }, a.peerDev);
+      };
+      if ('ontrack' in pc) {
+        pc.ontrack = function (ev) {
+          if (!a.remote) {
+            var s = ev.streams && ev.streams[0];
+            if (!s) { s = new MediaStream(); }
+            onRemoteStream(a, s);
+          }
+          if (a.remote.getTracks().indexOf(ev.track) < 0) try { a.remote.addTrack(ev.track); } catch (e) {}
+        };
+      } else {
+        pc.onaddstream = function (ev) { onRemoteStream(a, ev.stream); };
+      }
+      pc.oniceconnectionstatechange = function () {
+        if (Call.active !== a) return;
+        var st = pc.iceConnectionState;
+        if (st === 'connected' || st === 'completed') {
+          if (!a.started) {
+            a.started = Date.now();
+            a.tick = setInterval(function () { if (Call.active === a) $('kState').textContent = callState(); }, 1000);
+          }
+          a.state = 'active';
+          clearTimeout(a.lost);
+          showCall();
+        } else if (st === 'disconnected' && a.started) {
+          a.state = 'reconnecting';
+          showCall();
+          clearTimeout(a.lost);
+          a.lost = setTimeout(function () {
+            if (Call.active === a && a.state === 'reconnecting') { signal(a.peer, { type: 'hangup', id: a.id }, a.peerDev); endCall('verbinding verbroken'); }
+          }, 20000);
+        } else if (st === 'failed') {
+          signal(a.peer, { type: 'hangup', id: a.id }, a.peerDev);
+          endCall('verbinding mislukt');
+        }
+      };
+      if (a.dir === 'out') {
+        var au = a.local.getAudioTracks()[0], vi = a.local.getVideoTracks()[0];
+        if (pc.addTransceiver) {
+          pc.addTransceiver(au, { direction: 'sendrecv', streams: [a.local] });
+          if (vi) pc.addTransceiver(vi, { direction: 'sendrecv', streams: [a.local] });
+          else pc.addTransceiver('video', { direction: 'sendrecv' });
+        } else if (pc.addTrack) {
+          each(a.local.getTracks(), function (t) { pc.addTrack(t, a.local); });
+        } else {
+          pc.addStream(a.local);
+        }
+      }
+      return pc;
+    });
+  }
+  // Na het opnemen: de beller maakt het aanbod.
+  function onAccept(e, d) {
+    var a = Call.active;
+    if (!a || a.id !== d.id || a.dir !== 'out') return;
+    if (a.peerDev) { signal(e.from, { type: 'hangup', id: d.id }, e.dev); return; } // ander apparaat was eerder
+    clearTimeout(a.timeout);
+    clearInterval(a.reRing);
+    a.peerDev = e.dev;
+    a.state = 'connecting';
+    silence();
+    showCall();
+    makePc(a).then(function (pc) {
+      var opts = pc.addTransceiver ? undefined : { offerToReceiveAudio: true, offerToReceiveVideo: true };
+      return pc.createOffer(opts).then(function (o) { return pc.setLocalDescription(o); }).then(function () {
+        signal(a.peer, { type: 'offer', id: a.id, sdp: plainDesc(pc.localDescription) }, a.peerDev);
+      });
+    }).then(null, function (err) {
+      log('aanbod: ' + (err && err.message));
+      signal(a.peer, { type: 'hangup', id: a.id }, a.peerDev);
+      endCall('verbinding mislukt');
+    });
+  }
+  function onOffer(e, d) {
+    var a = Call.active;
+    if (!a || a.id !== d.id || e.dev !== a.peerDev || !a.pc) return;
+    var pc = a.pc;
+    pc.setRemoteDescription(remoteDesc(d.sdp)).then(function () {
+      var au = a.local.getAudioTracks()[0] || null, vi = a.local.getVideoTracks()[0] || null;
+      if (pc.getTransceivers) {
+        var jobs = [];
+        each(pc.getTransceivers(), function (tx) {
+          var kind = tx.receiver && tx.receiver.track && tx.receiver.track.kind;
+          var track = kind === 'audio' ? au : kind === 'video' ? vi : null;
+          if (kind === 'audio') au = null;
+          if (kind === 'video') vi = null;
+          if (track) { tx.direction = 'sendrecv'; jobs.push(tx.sender.replaceTrack(track)); }
+        });
+        return Promise.all(jobs);
+      }
+      if (pc.addTrack) each(a.local.getTracks(), function (t) { pc.addTrack(t, a.local); });
+      else pc.addStream(a.local);
+    }).then(function () {
+      return pc.createAnswer();
+    }).then(function (ans) {
+      return pc.setLocalDescription(ans);
+    }).then(function () {
+      signal(a.peer, { type: 'answer', id: a.id, sdp: plainDesc(pc.localDescription) }, a.peerDev);
+      flushIce(a);
+      signal(a.peer, { type: 'media', id: a.id, video: !!a.local.getVideoTracks().length && !Call.camOff }, a.peerDev);
+    }).then(null, function (err) {
+      log('antwoord: ' + (err && err.message));
+      signal(a.peer, { type: 'hangup', id: a.id }, a.peerDev);
+      endCall('verbinding mislukt');
+    });
+  }
+  function onAnswer(d) {
+    var a = Call.active;
+    if (!a || a.id !== d.id || !a.pc) return;
+    a.pc.setRemoteDescription(remoteDesc(d.sdp)).then(function () {
+      flushIce(a);
+      signal(a.peer, { type: 'media', id: a.id, video: !!a.local.getVideoTracks().length && !Call.camOff }, a.peerDev);
+    }, function (err) { log('antwoord ontvangen: ' + (err && err.message)); });
+  }
+
+  function onCallSignal(e) {
+    var d = e.d || {};
+    if (!me || d.enc) return; // versleuteld (oude Skitta-versie): niet te lezen
+    var a = Call.active;
+    switch (d.type) {
+      case 'ring':
+        if (e.from === me.id) return;
+        onRing(e, d);
+        return;
+      case 'cancel':
+        if (Call.incoming && Call.incoming.id === d.id) {
+          var inc = Call.incoming;
+          dismissIncoming();
+          toast(inc.name, 'gemiste oproep', inc.conv);
+          notifyAway(inc.name, 'Gemiste oproep', 'c' + inc.conv);
+        }
+        return;
+      case 'taken':
+        if (Call.incoming && Call.incoming.id === d.id) dismissIncoming();
+        return;
+      case 'accept': onAccept(e, d); return;
+      case 'offer': onOffer(e, d); return;
+      case 'answer': onAnswer(d); return;
+      case 'ice':
+        if (!a || a.id !== d.id || !a.pc || !d.c) return;
+        if (!a.pc.remoteDescription) a.pendingIce.push(d.c); else addIce(a, d.c);
+        return;
+      case 'media':
+        if (!a || a.id !== d.id) return;
+        a.remoteVideo = !!d.video && !isLumia;
+        showCall();
+        return;
+      case 'decline':
+        if (!a || a.id !== d.id) return;
+        sound('BUSY');
+        endCall('geweigerd', true);
+        return;
+      case 'busy':
+        if (!a || a.id !== d.id) return;
+        sound('BUSY');
+        endCall(a.name + ' is al in gesprek', true);
+        return;
+      case 'offline':
+        if (!a || a.id !== d.id) return;
+        sound('BUSY');
+        endCall(a.name + ' is niet online', true);
+        return;
+      case 'hangup':
+        if (a && a.id === d.id) endCall();
+        else if (Call.incoming && Call.incoming.id === d.id) dismissIncoming();
+    }
+  }
+
+  function hangup() {
+    var a = Call.active;
+    if (!a) return;
+    signal(a.peer, { type: a.state === 'ringing' ? 'cancel' : 'hangup', id: a.id }, a.peerDev);
+    endCall();
+  }
+  function endCall(text, silent) {
+    var a = Call.active;
+    if (!a) return;
+    Call.ended[a.id] = 1;
+    clearInterval(a.reRing); clearTimeout(a.timeout); clearInterval(a.tick); clearTimeout(a.lost);
+    silence();
+    if (!silent) sound('HANGUP');
+    try { if (a.pc) a.pc.close(); } catch (e) {}
+    stopTracks(a.local);
+    $('kAudio').srcObject = null;
+    $('kRemote').srcObject = null;
+    $('kLocal').srcObject = null;
+    nativeCall(false);
+    if (a.dir === 'out') {
+      var dur = a.started ? Math.round((Date.now() - a.started) / 1000) : 0;
+      var failed = !dur && /niet online|mislukt/.test(text || '');
+      request('POST', '/api/conversations/' + a.conv + '/messages', { kind: 'call', duration: dur, video: a.video, missed: !dur && !failed, failed: failed })
+        .then(null, function () {});
+    }
+    // even laten zien hoe het afliep
+    a.state = 'ended';
+    a.endText = text || 'gesprek beëindigd';
+    if (a.started) {
+      var s = Math.round((Date.now() - a.started) / 1000);
+      a.endText = text || ('gesprek beëindigd · ' + Math.floor(s / 60) + ':' + two(s % 60));
+    }
+    $('kOn').hidden = true;
+    $('kState').textContent = a.endText;
+    setTimeout(function () {
+      if (Call.active === a) { Call.active = null; showCall(); }
+    }, 1500);
+  }
+
+  $('kAccept').addEventListener('click', function () { acceptCall(false); });
+  $('kAcceptV').addEventListener('click', function () { acceptCall(true); });
+  $('kDecline').addEventListener('click', declineCall);
+  $('kHang').addEventListener('click', hangup);
+  $('kMute').addEventListener('click', function () {
+    var a = Call.active;
+    if (!a || !a.local) return;
+    Call.muted = !Call.muted;
+    each(a.local.getAudioTracks(), function (t) { t.enabled = !Call.muted; });
+    showCall();
+  });
+  $('kCam').addEventListener('click', function () {
+    var a = Call.active;
+    if (!a || !a.local) return;
+    Call.camOff = !Call.camOff;
+    each(a.local.getVideoTracks(), function (t) { t.enabled = !Call.camOff; });
+    signal(a.peer, { type: 'media', id: a.id, video: !Call.camOff }, a.peerDev);
+    showCall();
+  });
+  $('cCall').addEventListener('click', function () { startCall(current, false); });
+  $('cVCall').addEventListener('click', function () { startCall(current, true); });
+  function markCallButtons() {
+    var ok = rtcPossible();
+    $('cCall').hidden = !ok;
+    $('cVCall').hidden = !ok || isLumia;
+  }
+  markCallButtons();
 
   // ---------- toetsenbord ----------
   // iPhone: het toetsenbord verkleint alleen de visualViewport; de app volgt die, zodat het invoerveld zichtbaar blijft.
@@ -1321,11 +1965,18 @@
     showBase('p-main');
     if (pivotIndex !== 0) setPivot(0);
     $('chatList').innerHTML = '';
-    loadChats().then(null, function (e) {
+    var open = /^#c(\d+)$/.exec(location.hash);
+    if (open) try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    loadChats().then(function () {
+      if (open) liteOpen(+open[1]);
+    }, function (e) {
       if (me) $('chatList').appendChild(el('div', 'empty', e.message));
     });
     wsOk = false;
     connect();
+    nativeSession();
+    lumiaSession();
+    syncPush().then(null, function () {});
   }
 
   fillIcons(document);

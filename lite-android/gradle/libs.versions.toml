@@ -1,9 +1,11 @@
 [versions]
 agp = "9.4.1"
 activity = "1.8.0"
+okhttp = "4.12.0"
 
 [libraries]
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

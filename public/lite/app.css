@@ -140,6 +140,11 @@ svg { display: block; }
 html.lumia .head .back { display: none; }
 html.lumia .head { padding-left: 19px; }
 
+.hbtn { width: 48px; height: 48px; -webkit-flex: none; -ms-flex: none; flex: none; }
+.hbtn i { display: block; width: 20px; height: 20px; margin: 0 auto; }
+.hbtn:active { background: rgba(255, 255, 255, .15); }
+body.light .hbtn:active { background: rgba(0, 0, 0, .1); }
+
 /* ---------- gesprek ---------- */
 #cScroll { top: 48px; top: calc(48px + env(safe-area-inset-top, 0px)); bottom: 102px; bottom: calc(102px + env(safe-area-inset-bottom, 0px)); padding: 8px 0 6px; }
 .older { text-align: center; color: #999; padding: 8px; font-size: 13px; }
@@ -202,6 +207,27 @@ html.lumia .vclose { display: none; }
 .accents a { float: left; width: 38px; height: 38px; margin: 0 4px 4px 0; border: 2px solid transparent; }
 .accents a.on { border-color: #fff; }
 #getApp .btn { margin-bottom: 6px; }
+
+/* ---------- bellen ---------- */
+#call { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 35; background: #1f1f1f; color: #fff; overflow: hidden; }
+#call video { position: absolute; background: #000; }
+#kRemote { left: 0; top: 0; width: 100%; height: 100%; }
+#kLocal { right: 12px; bottom: 120px; bottom: calc(120px + env(safe-area-inset-bottom, 0px)); width: 96px; height: 128px; z-index: 2; border: 1px solid rgba(255, 255, 255, .3); }
+.kinfo { position: absolute; left: 0; right: 0; top: 18%; text-align: center; z-index: 1; }
+.kinfo .avatar { width: 112px; height: 112px; line-height: 112px; font-size: 48px; margin: 0 auto 14px; }
+.kname { font-size: 28px; font-weight: 300; padding: 0 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kstate { font-size: 15px; color: #bbb; margin-top: 4px; }
+#call.vid .kinfo { top: 0; padding: 12px 0 10px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); background: rgba(0, 0, 0, .45); }
+#call.vid .kinfo .avatar { display: none; }
+#call.vid .kname { font-size: 20px; }
+.kbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; text-align: center; padding: 14px 0 18px; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); white-space: nowrap; }
+.kb { display: inline-block; vertical-align: top; width: 84px; text-align: center; }
+.kb i { display: block; width: 60px; height: 60px; margin: 0 auto 6px; padding: 18px; border-radius: 50%; background: rgba(255, 255, 255, .2); }
+.kb span { display: block; font-size: 13px; }
+.kb.on i { background: #fff; color: #000; }
+.kb.green i { background: #10893E; }
+.kb.red i { background: #E81123; }
+.kb:active i { opacity: .7; }
 
 /* ---------- melding bovenaan (toast) ---------- */
 #toast {

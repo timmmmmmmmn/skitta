@@ -413,7 +413,9 @@ async function pushMessage(env, user, conv, m) {
   ).bind(conv.id, user.id, now()).all();
   const others = results.map((r) => r.user_id);
   const title = conv.kind === 'group' ? `${user.display_name} in ${conv.topic || 'een groep'}` : user.display_name;
-  const body = m.kind === 'call' ? 'Gemiste oproep' : m.kind === 'photo' ? 'Heeft een bijlage gestuurd' : 'Nieuw bericht';
+  // Onversleutelde tekst (gesprekken met Skitta Lite) mag in de melding; versleutelde nooit.
+  const plain = m.kind === 'text' && !m.enc && m.body ? (m.body.length > 140 ? `${m.body.slice(0, 140)}…` : m.body) : null;
+  const body = m.kind === 'call' ? 'Gemiste oproep' : m.kind === 'photo' ? 'Heeft een bijlage gestuurd' : plain || 'Nieuw bericht';
   if (m.kind === 'call' && !JSON.parse(m.body || '{}').missed) return;
   await pushAway(env, others, { t: 'msg', c: conv.id, title, body, tag: `c${conv.id}` });
 }

@@ -14,7 +14,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="img/icon-192.png">
 <link rel="apple-touch-icon" href="img/icon-180.png">
-<link rel="stylesheet" href="app.css?v=4">
+<link rel="stylesheet" href="app.css?v=5">
 </head>
 <body>
 <div id="app">
@@ -51,6 +51,11 @@
         <label class="radio" id="themeAutoRow"><input type="radio" name="theme" value="auto"><i></i>Zelfde als de telefoon</label>
         <h3>Accentkleur</h3>
         <div class="accents" id="accents"></div>
+        <div id="pushBox" hidden>
+          <h3>Meldingen</h3>
+          <p class="sub" id="pushText">Krijg een melding bij nieuwe berichten en als iemand je belt, ook als Skitta Lite dicht is.</p>
+          <button class="btn" id="pushBtn">meldingen aanzetten</button>
+        </div>
         <h3>Account</h3>
         <p class="sub">Aangemeld als <b id="meName"></b></p>
         <button class="btn" id="logout">afmelden</button>
@@ -86,7 +91,7 @@
 
   <!-- gesprek -->
   <section class="page" id="p-chat">
-    <div class="head"><button class="back"><i data-ic="back"></i></button><span class="avatar sm" id="cAvatar"></span><div class="htitle" id="cName"></div></div>
+    <div class="head"><button class="back"><i data-ic="back"></i></button><span class="avatar sm" id="cAvatar"></span><div class="htitle" id="cName"></div><button class="hbtn" id="cCall" hidden><i data-ic="phone"></i></button><button class="hbtn" id="cVCall" hidden><i data-ic="video"></i></button></div>
     <div class="scroll" id="cScroll"><div id="cOlder" class="older" hidden>oudere berichten laden</div><div id="cMsgs"></div></div>
     <div class="composer">
       <textarea id="cText" class="tb" rows="1" placeholder="Typ een bericht" maxlength="4000"></textarea>
@@ -114,10 +119,28 @@
     <button class="vclose back"><i data-ic="close"></i></button>
   </section>
 
+  <!-- bellen -->
+  <div id="call" hidden>
+    <video id="kRemote" autoplay playsinline muted></video>
+    <video id="kLocal" autoplay playsinline muted></video>
+    <div class="kinfo"><span class="avatar" id="kAvatar"></span><div class="kname" id="kName"></div><div class="kstate" id="kState"></div></div>
+    <div class="kbar" id="kIn">
+      <button class="kb red" id="kDecline"><i data-ic="hangup"></i><span>weigeren</span></button>
+      <button class="kb green" id="kAccept"><i data-ic="phone"></i><span>opnemen</span></button>
+      <button class="kb green" id="kAcceptV"><i data-ic="video"></i><span>met video</span></button>
+    </div>
+    <div class="kbar" id="kOn">
+      <button class="kb" id="kMute"><i data-ic="mic"></i><span>dempen</span></button>
+      <button class="kb" id="kCam"><i data-ic="video"></i><span>camera</span></button>
+      <button class="kb red" id="kHang"><i data-ic="hangup"></i><span>ophangen</span></button>
+    </div>
+    <audio id="kAudio" autoplay></audio>
+  </div>
+
   <div id="toast"></div>
   <div id="dialog" hidden><div class="dbox"><h2 id="dTitle"></h2><p id="dText"></p><div class="dbtns" id="dBtns"></div></div></div>
 </div>
 <script src="fout.js?v=1"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

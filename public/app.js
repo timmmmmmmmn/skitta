@@ -1772,8 +1772,8 @@ function renderHead() {
         h('div', { class: 'sub' }, lite ? 'Skitta Lite · niet versleuteld' : c.mood || ''),
         h('div', { class: 'sub2' }, statusLine(S.contacts.get(c.id)))),
       h('div', { class: 'actions' },
-        h('button', { class: 'sbtn blue', disabled: !canTalk || inCall || lite, onclick: () => Call.start(c.id, true), title: 'Videogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
-        h('button', { class: 'sbtn green', disabled: !canTalk || inCall || lite, onclick: () => Call.start(c.id, false), title: 'Bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
+        h('button', { class: 'sbtn blue', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, true), title: 'Videogesprek' }, svg('video'), h('span', { class: 'lbl' }, 'Videogesprek')),
+        h('button', { class: 'sbtn green', disabled: !canTalk || inCall, onclick: () => Call.start(c.id, false), title: 'Bellen' }, svg('phone'), h('span', { class: 'lbl' }, 'Bellen')),
         h('button', { class: 'sbtn blue round', title: 'Personen toevoegen', disabled: !canTalk || lite, onclick: () => groupDialog([c.id]) }, svg('plus')),
         moreButton(conv))
     );
@@ -1896,7 +1896,7 @@ function renderMessages({ keepScroll = false } = {}) {
   if (b.loaded && b.more) chat.append(h('button', { class: 'btn more', onclick: () => loadOlder(conv.id) }, 'Eerdere berichten laden'));
   if (b.loaded && !b.more) {
     chat.append(h('div', { class: 'e2e-note' }, plainConv(conv.id)
-      ? 'Dit gesprek is niet versleuteld: deze persoon gebruikt Skitta Lite (zonder sleutels). Bellen kan hier niet.'
+      ? 'Dit gesprek is niet versleuteld: deze persoon gebruikt Skitta Lite (zonder sleutels).'
       : '🔒 Berichten en foto\'s in dit gesprek zijn end-to-end versleuteld. Alleen de mensen in dit gesprek kunnen ze lezen.'));
   }
   if (!b.loaded) chat.append(h('div', { class: 'day' }, 'Laden…'));
@@ -5405,7 +5405,8 @@ const Call = {
     const conv = this.active?.conv || this.incoming?.conv;
     this.sendQueue = this.sendQueue.then(async () => {
       let out = d;
-      if (conv && ['offer', 'answer', 'ice', 'media'].includes(d.type)) {
+      // Met Skitta Lite kan dat niet: die heeft geen sleutels, dus daar gaan de signalen leesbaar.
+      if (conv && !plainConv(conv) && ['offer', 'answer', 'ice', 'media'].includes(d.type)) {
         const { type, id, ...rest } = d;
         try { out = { type, id, enc: (await E2E.encrypt(conv, JSON.stringify(rest))).body }; } catch { return; }
       }
@@ -5426,7 +5427,6 @@ const Call = {
     if (this.active || this.incoming || GroupCall.active) return toastError('Je bent al in gesprek');
     const contact = S.contacts.get(peer);
     if (contact?.state !== 'ok') return;
-    if (contact.lite) return alertDialog('Bellen', `${contact.display_name} gebruikt Skitta Lite. Daarmee kun je niet bellen, alleen chatten.`);
     if (!S.ws || S.ws.readyState !== 1) return toastError('Geen verbinding met Skitta');
     let conv = directConvWith(peer);
     if (!conv) {
